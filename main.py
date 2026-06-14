@@ -29,22 +29,23 @@ def manual():
         return jsonify({"error": "JSON body is required"}), 400
 
     video_url = data.get("video_url")
+    file_url = data.get("file_url")
 
-    if not video_url:
-        return jsonify({"error": "video_url is required"}), 400
+    source_url = video_url or file_url
+
+    if not source_url:
+        return jsonify({"error": "video_url or file_url is required"}), 400
 
     work_id = str(int(time.time()))
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
-        # 動画をダウンロード
-        r = requests.get(video_url, timeout=180)
+        r = requests.get(source_url, timeout=180)
         r.raise_for_status()
 
         with open(video_path, "wb") as f:
             f.write(r.content)
 
-        # スクショ抽出
         frame_paths = extract_frames(
             video_path,
             work_id,
@@ -52,10 +53,8 @@ def manual():
             max_frames=10
         )
 
-        # Cloud Storageへアップロード
         image_urls = upload_frames(frame_paths, work_id)
 
-        # Geminiへ動画アップロード
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
@@ -150,7 +149,6 @@ def upload_frames(frame_paths, work_id):
         blob_name = f"manual_frames/{work_id}/frame_{i}.jpg"
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(frame_path, content_type="image/jpeg")
-
         urls.append(blob.public_url)
 
     return urls
