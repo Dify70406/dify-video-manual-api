@@ -23,7 +23,11 @@ def hello():
 
 @app.route("/manual", methods=["POST"])
 def manual():
-    data = request.get_json()
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({"error": "JSON body is required"}), 400
+
     video_url = data.get("video_url")
 
     if not video_url:
@@ -32,30 +36,36 @@ def manual():
     work_id = str(int(time.time()))
     video_path = f"/tmp/{work_id}.mp4"
 
-    # 動画をダウンロード
-    r = requests.get(video_url, timeout=180)
-    r.raise_for_status()
+    try:
+        # 動画をダウンロード
+        r = requests.get(video_url, timeout=180)
+        r.raise_for_status()
 
-    with open(video_path, "wb") as f:
-        f.write(r.content)
+        with open(video_path, "wb") as f:
+            f.write(r.content)
 
-    # スクショ抽出
-    frame_paths = extract_frames(video_path, work_id, interval_sec=5, max_frames=10)
+        # スクショ抽出
+        frame_paths = extract_frames(
+            video_path,
+            work_id,
+            interval_sec=5,
+            max_frames=10
+        )
 
-    # Cloud Storageへアップロード
-    image_urls = upload_frames(frame_paths, work_id)
+        # Cloud Storageへアップロード
+        image_urls = upload_frames(frame_paths, work_id)
 
-    # Geminiへ動画アップロード
-    uploaded_file = client.files.upload(file=video_path)
+        # Geminiへ動画アップロード
+        uploaded_file = client.files.upload(file=video_path)
 
-    while uploaded_file.state.name == "PROCESSING":
-        time.sleep(5)
-        uploaded_file = client.files.get(name=uploaded_file.name)
+        while uploaded_file.state.name == "PROCESSING":
+            time.sleep(5)
+            uploaded_file = client.files.get(name=uploaded_file.name)
 
-    if uploaded_file.state.name != "ACTIVE":
-        return jsonify({"error": "Gemini video processing failed"}), 500
+        if uploaded_file.state.name != "ACTIVE":
+            return jsonify({"error": "Gemini video processing failed"}), 500
 
-    prompt = f"""
+        prompt = f"""
 この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
 
 以下の画像URLは、動画から自動抽出したスクリーンショットです。
@@ -87,15 +97,20 @@ def manual():
 - 画像URLは必ず本文内に使ってください
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=[uploaded_file, prompt]
-    )
+        response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=[uploaded_file, prompt]
+        )
 
-    return jsonify({
-        "manual": response.text,
-        "images": image_urls
-    })
+        return jsonify({
+            "manual": response.text,
+            "images": image_urls
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
 def extract_frames(video_path, work_id, interval_sec=5, max_frames=10):
@@ -135,9 +150,6 @@ def upload_frames(frame_paths, work_id):
         blob_name = f"manual_frames/{work_id}/frame_{i}.jpg"
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(frame_path, content_type="image/jpeg")
-
-        # 公開URLとして使う
-        blob.make_public()
 
         urls.append(blob.public_url)
 
