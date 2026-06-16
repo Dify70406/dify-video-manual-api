@@ -22,7 +22,7 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（最終版）
+# ✅ YouTubeダウンロード
 def download_video(url):
     ydl_opts = {
         'format': 'best[height<=360]',
@@ -31,13 +31,13 @@ def download_video(url):
         'noplaylist': True
     }
 
-    print("yt-dlp format:", ydl_opts['format'])
+    print("Downloading video...")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
 
-    print("downloaded file:", filename)
+    print("Downloaded:", filename)
     return filename
 
 
@@ -52,89 +52,90 @@ def manual():
             "error": "JSON body is required"
         })
 
-    video_url = data.get("video_url")
-    file_url = data.get("file_url")
-    source_url = video_url or file_url
+    source_url = data.get("video_url") or data.get("file_url")
 
     if not source_url:
         return jsonify({
             "manual": "",
             "images": [],
-            "error": "video_url or file_url is required"
+            "error": "URLがありません"
         })
 
     try:
         print("=== START ===")
         print("URL:", source_url)
 
-        # ✅ YouTube判定
+        # ✅ YouTube or 通常
         if "youtube" in source_url:
-            print("YouTube download start")
             video_path = download_video(source_url)
-            print("YouTube download finished")
         else:
-            print("Normal download start")
-            temp_path = f"/tmp/{int(time.time())}.mp4"
+            video_path = f"/tmp/{int(time.time())}.mp4"
 
             r = requests.get(source_url, timeout=180)
             r.raise_for_status()
 
-            with open(temp_path, "wb") as f:
+            with open(video_path, "wb") as f:
                 f.write(r.content)
 
-            video_path = temp_path
-            print("Normal download finished")
-
-        # ✅ ファイル検証
+        # ✅ ファイルチェック
         if not os.path.exists(video_path):
-            raise Exception("動画ファイルが存在しません")
+            raise Exception("動画が存在しません")
 
         size = os.path.getsize(video_path)
         print("size:", size)
 
         if size < 100000:
-            raise Exception("動画サイズが小さすぎる（ダウンロード失敗）")
+            raise Exception("動画が小さすぎる")
 
         # ✅ フレーム抽出
         work_id = str(int(time.time()))
 
-        frame_paths = extract_frames(
-            video_path,
-            work_id,
-            interval_sec=10,
-            max_frames=3
-        )
-
-        print("frames:", len(frame_paths))
+        frame_paths = extract_frames(video_path, work_id)
 
         if not frame_paths:
             raise Exception("フレーム抽出失敗")
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Gemini（ここが最終修正ポイント）
+        print("frames:", len(frame_paths))
+
+        # ✅ ⭐ 重要：Geminiは画像URLだけで生成
         prompt = f"""
-この動画の操作手順を作成してください。
+以下の画像は動画から抽出した操作画面です。
 
-画像:
-{json.dumps(image_urls, ensure_ascii=False)}
+これを元に操作マニュアルを作成してください。
 
-Markdown形式で出力してください。
+画像一覧:
+{json.dumps(image_urls, ensure_ascii=False, indent=2)}
+
+出力形式：
+
+# 操作手順
+
+## 手順1
+![image](URL)
+説明
+
+## 手順2
+![image](URL)
+説明
+
+条件：
+- Markdown形式
+- 必ず画像URLを使う
 """
 
-        print("Generating...")
+        print("Generating manual...")
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=prompt   # ✅ ← ここ重要（修正済）
+            contents=prompt   # ✅ ここが最重要（動画渡さない）
         )
 
         text = response.text if response.text else ""
 
-        print("Gemini response:", text)
-
         if not text.strip():
-            raise Exception("Geminiの出力が空")
+            raise Exception("Gemini出力が空")
 
         print("=== SUCCESS ===")
 
@@ -153,29 +154,29 @@ Markdown形式で出力してください。
         })
 
 
-def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
+def extract_frames(video_path, work_id):
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
         raise Exception("動画が開けません")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    frame_interval = int(fps * interval_sec)
+    interval = int(fps * 10)
 
     frame_paths = []
     frame_count = 0
-    saved_count = 0
+    saved = 0
 
-    while cap.isOpened() and saved_count < max_frames:
+    while cap.isOpened() and saved < 3:
         ret, frame = cap.read()
         if not ret:
             break
 
-        if frame_count % frame_interval == 0:
-            frame_path = f"/tmp/{work_id}_{saved_count}.jpg"
-            cv2.imwrite(frame_path, frame)
-            frame_paths.append(frame_path)
-            saved_count += 1
+        if frame_count % interval == 0:
+            path = f"/tmp/{work_id}_{saved}.jpg"
+            cv2.imwrite(path, frame)
+            frame_paths.append(path)
+            saved += 1
 
         frame_count += 1
 
@@ -188,10 +189,10 @@ def upload_frames(frame_paths, work_id):
 
     urls = []
 
-    for i, frame_path in enumerate(frame_paths):
-        blob_name = f"frames/{work_id}_{i}.jpg"
-        blob = bucket.blob(blob_name)
-        blob.upload_from_filename(frame_path, content_type="image/jpeg")
+    for i, path in enumerate(frame_paths):
+        name = f"frames/{work_id}_{i}.jpg"
+        blob = bucket.blob(name)
+        blob.upload_from_filename(path, content_type="image/jpeg")
         urls.append(blob.public_url)
 
     return urls
