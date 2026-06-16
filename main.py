@@ -22,10 +22,10 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（最終版）
+# ✅ YouTubeダウンロード（完全修正版）
 def download_video(url):
     ydl_opts = {
-        'format': 'best[height<=360]',
+        'format': 'best[height<=360]',  # ✅ ← ここ修正済み（超重要）
         'outtmpl': '/tmp/%(id)s.%(ext)s',
         'quiet': True,
         'noplaylist': True
@@ -68,7 +68,7 @@ def manual():
         print("=== START ===")
         print("URL:", source_url)
 
-        # ✅ YouTube判定（最終）
+        # ✅ YouTube判定
         if "youtube" in source_url:
             print("YouTube download start")
             video_path = download_video(source_url)
@@ -86,7 +86,7 @@ def manual():
             video_path = temp_path
             print("Normal download finished")
 
-        # ✅ ファイル検証
+        # ✅ ファイルチェック
         if not os.path.exists(video_path):
             raise Exception("動画ファイルが存在しません")
 
@@ -94,7 +94,7 @@ def manual():
         print("size:", size)
 
         if size < 100000:
-            raise Exception("動画サイズが小さすぎる")
+            raise Exception("動画が小さすぎる（ダウンロード失敗）")
 
         # ✅ フレーム抽出
         work_id = str(int(time.time()))
@@ -113,7 +113,7 @@ def manual():
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Gemini
+        # ✅ Geminiアップロード
         print("Gemini upload...")
         uploaded_file = client.files.upload(file=video_path)
 
@@ -133,7 +133,7 @@ def manual():
 画像:
 {json.dumps(image_urls, ensure_ascii=False)}
 
-Markdownで出力。
+Markdown形式で出力してください。
 """
 
         response = client.models.generate_content(
@@ -195,6 +195,7 @@ def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
 
 def upload_frames(frame_paths, work_id):
     bucket = storage_client.bucket(BUCKET_NAME)
+
     urls = []
 
     for i, frame_path in enumerate(frame_paths):
