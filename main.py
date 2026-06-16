@@ -22,10 +22,10 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（ffmpeg不要＆軽量化）
+# ✅ YouTubeダウンロード（軽量・ffmpeg不要）
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'worst[height<=360]',   # ✅ 軽くて高速（重要）
+        'format': 'worst[height<=360]',  # ✅ 軽量最優先
         'outtmpl': video_path,
         'quiet': True,
         'noplaylist': True
@@ -39,7 +39,11 @@ def manual():
     data = request.get_json(silent=True)
 
     if not data:
-        return jsonify({"error": "JSON body is required"}), 400
+        return jsonify({
+            "manual": "",
+            "images": [],
+            "error": "JSON body is required"
+        })
 
     video_url = data.get("video_url")
     file_url = data.get("file_url")
@@ -47,32 +51,38 @@ def manual():
     source_url = video_url or file_url
 
     if not source_url:
-        return jsonify({"error": "video_url or file_url is required"}), 400
+        return jsonify({
+            "manual": "",
+            "images": [],
+            "error": "video_url or file_url is required"
+        })
 
     work_id = str(int(time.time()))
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
-        print("=== START PROCESS ===")
+        print("=== START ===")
 
-        # ✅ YouTube or 通常URL
+        # ✅ ダウンロード処理
         if "youtube.com" in source_url or "youtu.be" in source_url:
-            print("Downloading from YouTube...")
+            print("YouTube download start")
             download_video(source_url, video_path)
+            print("YouTube download finished")
         else:
-            print("Downloading via requests...")
+            print("Normal download start")
             r = requests.get(source_url, timeout=180)
             r.raise_for_status()
 
             with open(video_path, "wb") as f:
                 f.write(r.content)
+            print("Normal download finished")
 
-        # ✅ ダウンロード確認
+        # ✅ ファイル確認
         if not os.path.exists(video_path):
             raise Exception("動画ファイルが存在しません")
 
         size = os.path.getsize(video_path)
-        print(f"Video size: {size} bytes")
+        print("Video size:", size)
 
         if size < 1024 * 100:
             raise Exception("動画が小さすぎる（ダウンロード失敗）")
@@ -81,16 +91,16 @@ def manual():
         frame_paths = extract_frames(
             video_path,
             work_id,
-            interval_sec=10,   # ✅ 軽量化
-            max_frames=3       # ✅ さらに軽量（安定）
+            interval_sec=10,
+            max_frames=3
         )
 
-        print(f"Extracted frames: {len(frame_paths)}")
+        print("Frames:", len(frame_paths))
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Geminiにアップロード
-        print("Uploading to Gemini...")
+        # ✅ Gemini処理
+        print("Gemini upload start")
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
@@ -100,30 +110,17 @@ def manual():
         if uploaded_file.state.name != "ACTIVE":
             raise Exception("Gemini動画処理失敗")
 
-        # ✅ プロンプト
+        print("Gemini ready")
+
         prompt = f"""
-この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
+この動画を分析して、簡潔な操作手順を作成してください。
 
-画像URL:
-{json.dumps(image_urls, ensure_ascii=False, indent=2)}
+画像:
+{json.dumps(image_urls, ensure_ascii=False)}
 
-出力:
-# 操作手順
-
-## 手順1
-画像URL
-説明
-
-## 手順2
-画像URL
-説明
-
-条件:
-- Markdown形式
-- 画像URLを必ず使う
+Markdown形式で出力。
+画像URLを必ず使う。
 """
-
-        print("Generating content...")
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
@@ -138,11 +135,14 @@ def manual():
         })
 
     except Exception as e:
+        # ✅ ← ここが今回の最重要修正ポイント
         print("ERROR:", str(e))
 
         return jsonify({
+            "manual": "",
+            "images": [],
             "error": str(e)
-        }), 500
+        })
 
 
 def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
