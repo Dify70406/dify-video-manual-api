@@ -22,14 +22,15 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTube動画ダウンロード（修正済み）
+# ✅ YouTube動画ダウンロード
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'best[height<=360]',  # ✅ ← 修正済み（これ超重要）
+        'format': 'best[height<=360]',  # ✅ 修正済み
         'outtmpl': video_path,
         'quiet': True,
         'noplaylist': True
     }
+
     print("yt-dlp format:", ydl_opts['format'])
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -49,7 +50,6 @@ def manual():
 
     video_url = data.get("video_url")
     file_url = data.get("file_url")
-
     source_url = video_url or file_url
 
     if not source_url:
@@ -64,9 +64,11 @@ def manual():
 
     try:
         print("=== START ===")
+        print("SOURCE URL:", source_url)
+        print("YouTube判定:", "youtube" in source_url)
 
-        # ✅ 動画ダウンロード
-        if "youtube.com" in source_url or "youtu.be" in source_url:
+        # ✅ 修正：YouTube判定強化
+        if "youtube" in source_url:
             print("YouTube download start")
             download_video(source_url, video_path)
             print("YouTube download finished")
@@ -80,7 +82,7 @@ def manual():
 
             print("Normal download finished")
 
-        # ✅ ファイルチェック（重要）
+        # ✅ ファイルチェック
         exists = os.path.exists(video_path)
         size = os.path.getsize(video_path) if exists else 0
 
@@ -108,7 +110,7 @@ def manual():
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Gemini
+        # ✅ Gemini処理
         print("Gemini upload start")
         uploaded_file = client.files.upload(file=video_path)
 
@@ -132,11 +134,11 @@ def manual():
 # 操作手順
 
 ## 手順1
-![image](URL)
+URL
 説明
 
 ## 手順2
-![image](URL)
+URL
 説明
 
 条件：
@@ -166,7 +168,6 @@ def manual():
     except Exception as e:
         print("ERROR:", str(e))
 
-        # ✅ Dify対応：200で返す
         return jsonify({
             "manual": "",
             "images": [],
