@@ -22,14 +22,16 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTube動画ダウンロード（安定版）
+# ✅ YouTube動画ダウンロード（修正済み）
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'best[height<=360]',  # ✅ 成功率重視＆軽量
+        'format': 'best[height<=360]',  # ✅ ← 修正済み（これ超重要）
         'outtmpl': video_path,
         'quiet': True,
         'noplaylist': True
     }
+    print("yt-dlp format:", ydl_opts['format'])
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
 
@@ -78,7 +80,7 @@ def manual():
 
             print("Normal download finished")
 
-        # ✅ ファイルチェック
+        # ✅ ファイルチェック（重要）
         exists = os.path.exists(video_path)
         size = os.path.getsize(video_path) if exists else 0
 
@@ -91,7 +93,7 @@ def manual():
         if size < 1024 * 100:
             raise Exception("動画が小さすぎる（ダウンロード失敗）")
 
-        # ✅ フレーム抽出（軽量化）
+        # ✅ フレーム抽出
         frame_paths = extract_frames(
             video_path,
             work_id,
@@ -106,7 +108,7 @@ def manual():
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Geminiアップロード
+        # ✅ Gemini
         print("Gemini upload start")
         uploaded_file = client.files.upload(file=video_path)
 
@@ -119,7 +121,6 @@ def manual():
 
         print("Gemini ready")
 
-        # ✅ プロンプト
         prompt = f"""
 この動画を分析して簡潔な操作マニュアルを作成してください。
 
@@ -165,7 +166,7 @@ def manual():
     except Exception as e:
         print("ERROR:", str(e))
 
-        # ✅ Dify対応（超重要：200で返す）
+        # ✅ Dify対応：200で返す
         return jsonify({
             "manual": "",
             "images": [],
