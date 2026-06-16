@@ -22,11 +22,11 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTube動画ダウンロード
-def download_video(url, video_path):
+# ✅ YouTubeダウンロード（最終版）
+def download_video(url):
     ydl_opts = {
-        'format': 'best[height<=360]',  # ✅ 修正済み
-        'outtmpl': video_path,
+        'format': 'best[height<=360]',
+        'outtmpl': '/tmp/%(id)s.%(ext)s',
         'quiet': True,
         'noplaylist': True
     }
@@ -34,7 +34,12 @@ def download_video(url, video_path):
     print("yt-dlp format:", ydl_opts['format'])
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+
+    print("downloaded file:", filename)
+
+    return filename
 
 
 @app.route("/manual", methods=["POST"])
@@ -59,43 +64,41 @@ def manual():
             "error": "video_url or file_url is required"
         })
 
-    work_id = str(int(time.time()))
-    video_path = f"/tmp/{work_id}.mp4"
-
     try:
         print("=== START ===")
-        print("SOURCE URL:", source_url)
-        print("YouTube判定:", "youtube" in source_url)
+        print("URL:", source_url)
 
-        # ✅ 修正：YouTube判定強化
+        # ✅ YouTube判定（最終）
         if "youtube" in source_url:
             print("YouTube download start")
-            download_video(source_url, video_path)
+            video_path = download_video(source_url)
             print("YouTube download finished")
         else:
             print("Normal download start")
+            temp_path = f"/tmp/{int(time.time())}.mp4"
+
             r = requests.get(source_url, timeout=180)
             r.raise_for_status()
 
-            with open(video_path, "wb") as f:
+            with open(temp_path, "wb") as f:
                 f.write(r.content)
 
+            video_path = temp_path
             print("Normal download finished")
 
-        # ✅ ファイルチェック
-        exists = os.path.exists(video_path)
-        size = os.path.getsize(video_path) if exists else 0
-
-        print("file exists:", exists)
-        print("file size:", size)
-
-        if not exists:
+        # ✅ ファイル検証
+        if not os.path.exists(video_path):
             raise Exception("動画ファイルが存在しません")
 
-        if size < 1024 * 100:
-            raise Exception("動画が小さすぎる（ダウンロード失敗）")
+        size = os.path.getsize(video_path)
+        print("size:", size)
+
+        if size < 100000:
+            raise Exception("動画サイズが小さすぎる")
 
         # ✅ フレーム抽出
+        work_id = str(int(time.time()))
+
         frame_paths = extract_frames(
             video_path,
             work_id,
@@ -105,48 +108,33 @@ def manual():
 
         print("frames:", len(frame_paths))
 
-        if len(frame_paths) == 0:
-            raise Exception("フレーム抽出できません")
+        if not frame_paths:
+            raise Exception("フレーム抽出失敗")
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Gemini処理
-        print("Gemini upload start")
+        # ✅ Gemini
+        print("Gemini upload...")
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
-            time.sleep(5)
+            print("processing...")
+            time.sleep(3)
             uploaded_file = client.files.get(name=uploaded_file.name)
 
         if uploaded_file.state.name != "ACTIVE":
-            raise Exception("Gemini動画処理失敗")
+            raise Exception("Gemini処理失敗")
 
         print("Gemini ready")
 
         prompt = f"""
-この動画を分析して簡潔な操作マニュアルを作成してください。
+この動画の操作手順を作成してください。
 
-画像一覧:
+画像:
 {json.dumps(image_urls, ensure_ascii=False)}
 
-出力形式：
-
-# 操作手順
-
-## 手順1
-URL
-説明
-
-## 手順2
-URL
-説明
-
-条件：
-- Markdown形式
-- 画像URLを必ず使う
+Markdownで出力。
 """
-
-        print("Generating...")
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
@@ -155,8 +143,8 @@ URL
 
         text = response.text if response.text else ""
 
-        if text.strip() == "":
-            raise Exception("Geminiの出力が空です")
+        if not text.strip():
+            raise Exception("Geminiの出力が空")
 
         print("=== SUCCESS ===")
 
@@ -181,10 +169,7 @@ def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
     if not cap.isOpened():
         raise Exception("動画が開けません")
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if not fps or fps <= 0:
-        fps = 30
-
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
     frame_interval = int(fps * interval_sec)
 
     frame_paths = []
@@ -197,7 +182,7 @@ def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
             break
 
         if frame_count % frame_interval == 0:
-            frame_path = f"/tmp/{work_id}_frame_{saved_count + 1}.jpg"
+            frame_path = f"/tmp/{work_id}_{saved_count}.jpg"
             cv2.imwrite(frame_path, frame)
             frame_paths.append(frame_path)
             saved_count += 1
@@ -210,11 +195,10 @@ def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
 
 def upload_frames(frame_paths, work_id):
     bucket = storage_client.bucket(BUCKET_NAME)
-
     urls = []
 
-    for i, frame_path in enumerate(frame_paths, start=1):
-        blob_name = f"manual_frames/{work_id}/frame_{i}.jpg"
+    for i, frame_path in enumerate(frame_paths):
+        blob_name = f"frames/{work_id}_{i}.jpg"
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(frame_path, content_type="image/jpeg")
         urls.append(blob.public_url)
