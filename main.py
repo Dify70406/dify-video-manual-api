@@ -8,6 +8,8 @@ from flask import Flask, request, jsonify
 from google import genai
 from google.cloud import storage
 
+print("✅ NEW VERSION ACTIVE")  # ← デプロイ確認用（超重要）
+
 app = Flask(__name__)
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
@@ -65,7 +67,7 @@ def manual():
         print("=== START ===")
         print("URL:", source_url)
 
-        # ✅ YouTube or 通常
+        # ✅ YouTube判定
         if "youtube" in source_url:
             video_path = download_video(source_url)
         else:
@@ -89,7 +91,6 @@ def manual():
 
         # ✅ フレーム抽出
         work_id = str(int(time.time()))
-
         frame_paths = extract_frames(video_path, work_id)
 
         if not frame_paths:
@@ -99,7 +100,7 @@ def manual():
 
         print("frames:", len(frame_paths))
 
-        # ✅ ⭐ 重要：Geminiは画像URLだけで生成
+        # ✅ Gemini（画像URLのみ使用）
         prompt = f"""
 以下の画像は動画から抽出した操作画面です。
 
@@ -113,11 +114,11 @@ def manual():
 # 操作手順
 
 ## 手順1
-![image](URL)
+URL
 説明
 
 ## 手順2
-![image](URL)
+URL
 説明
 
 条件：
@@ -129,10 +130,12 @@ def manual():
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=prompt   # ✅ ここが最重要（動画渡さない）
+            contents=prompt
         )
 
         text = response.text if response.text else ""
+
+        print("Gemini response:", text)
 
         if not text.strip():
             raise Exception("Gemini出力が空")
@@ -196,3 +199,4 @@ def upload_frames(frame_paths, work_id):
         urls.append(blob.public_url)
 
     return urls
+``
