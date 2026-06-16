@@ -22,10 +22,10 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（完全修正版）
+# ✅ YouTubeダウンロード（最終版）
 def download_video(url):
     ydl_opts = {
-        'format': 'best[height<=360]',  # ✅ ← ここ修正済み（超重要）
+        'format': 'best[height<=360]',
         'outtmpl': '/tmp/%(id)s.%(ext)s',
         'quiet': True,
         'noplaylist': True
@@ -38,7 +38,6 @@ def download_video(url):
         filename = ydl.prepare_filename(info)
 
     print("downloaded file:", filename)
-
     return filename
 
 
@@ -86,7 +85,7 @@ def manual():
             video_path = temp_path
             print("Normal download finished")
 
-        # ✅ ファイルチェック
+        # ✅ ファイル検証
         if not os.path.exists(video_path):
             raise Exception("動画ファイルが存在しません")
 
@@ -94,7 +93,7 @@ def manual():
         print("size:", size)
 
         if size < 100000:
-            raise Exception("動画が小さすぎる（ダウンロード失敗）")
+            raise Exception("動画サイズが小さすぎる（ダウンロード失敗）")
 
         # ✅ フレーム抽出
         work_id = str(int(time.time()))
@@ -113,20 +112,7 @@ def manual():
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Geminiアップロード
-        print("Gemini upload...")
-        uploaded_file = client.files.upload(file=video_path)
-
-        while uploaded_file.state.name == "PROCESSING":
-            print("processing...")
-            time.sleep(3)
-            uploaded_file = client.files.get(name=uploaded_file.name)
-
-        if uploaded_file.state.name != "ACTIVE":
-            raise Exception("Gemini処理失敗")
-
-        print("Gemini ready")
-
+        # ✅ Gemini（ここが最終修正ポイント）
         prompt = f"""
 この動画の操作手順を作成してください。
 
@@ -136,12 +122,16 @@ def manual():
 Markdown形式で出力してください。
 """
 
+        print("Generating...")
+
         response = client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=[uploaded_file, prompt]
+            contents=prompt   # ✅ ← ここ重要（修正済）
         )
 
         text = response.text if response.text else ""
+
+        print("Gemini response:", text)
 
         if not text.strip():
             raise Exception("Geminiの出力が空")
