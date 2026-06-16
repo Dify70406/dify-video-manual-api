@@ -22,10 +22,10 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（軽量・ffmpeg不要）
+# ✅ YouTube動画ダウンロード（安定版）
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'worst[height<=360]',  # ✅ 軽量最優先
+        'format': 'best[height<=360]',  # ✅ 成功率重視＆軽量
         'outtmpl': video_path,
         'quiet': True,
         'noplaylist': True
@@ -63,7 +63,7 @@ def manual():
     try:
         print("=== START ===")
 
-        # ✅ ダウンロード処理
+        # ✅ 動画ダウンロード
         if "youtube.com" in source_url or "youtu.be" in source_url:
             print("YouTube download start")
             download_video(source_url, video_path)
@@ -75,19 +75,23 @@ def manual():
 
             with open(video_path, "wb") as f:
                 f.write(r.content)
+
             print("Normal download finished")
 
-        # ✅ ファイル確認
-        if not os.path.exists(video_path):
-            raise Exception("動画ファイルが存在しません")
+        # ✅ ファイルチェック
+        exists = os.path.exists(video_path)
+        size = os.path.getsize(video_path) if exists else 0
 
-        size = os.path.getsize(video_path)
-        print("Video size:", size)
+        print("file exists:", exists)
+        print("file size:", size)
+
+        if not exists:
+            raise Exception("動画ファイルが存在しません")
 
         if size < 1024 * 100:
             raise Exception("動画が小さすぎる（ダウンロード失敗）")
 
-        # ✅ フレーム抽出（軽量）
+        # ✅ フレーム抽出（軽量化）
         frame_paths = extract_frames(
             video_path,
             work_id,
@@ -95,11 +99,14 @@ def manual():
             max_frames=3
         )
 
-        print("Frames:", len(frame_paths))
+        print("frames:", len(frame_paths))
+
+        if len(frame_paths) == 0:
+            raise Exception("フレーム抽出できません")
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Gemini処理
+        # ✅ Geminiアップロード
         print("Gemini upload start")
         uploaded_file = client.files.upload(file=video_path)
 
@@ -112,32 +119,53 @@ def manual():
 
         print("Gemini ready")
 
+        # ✅ プロンプト
         prompt = f"""
-この動画を分析して、簡潔な操作手順を作成してください。
+この動画を分析して簡潔な操作マニュアルを作成してください。
 
-画像:
+画像一覧:
 {json.dumps(image_urls, ensure_ascii=False)}
 
-Markdown形式で出力。
-画像URLを必ず使う。
+出力形式：
+
+# 操作手順
+
+## 手順1
+![image](URL)
+説明
+
+## 手順2
+![image](URL)
+説明
+
+条件：
+- Markdown形式
+- 画像URLを必ず使う
 """
+
+        print("Generating...")
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=[uploaded_file, prompt]
         )
 
+        text = response.text if response.text else ""
+
+        if text.strip() == "":
+            raise Exception("Geminiの出力が空です")
+
         print("=== SUCCESS ===")
 
         return jsonify({
-            "manual": response.text,
+            "manual": text,
             "images": image_urls
         })
 
     except Exception as e:
-        # ✅ ← ここが今回の最重要修正ポイント
         print("ERROR:", str(e))
 
+        # ✅ Dify対応（超重要：200で返す）
         return jsonify({
             "manual": "",
             "images": [],
