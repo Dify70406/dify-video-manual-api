@@ -22,10 +22,10 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTube用ダウンロード
+# ✅ YouTubeダウンロード（軽量化済み）
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'mp4',
+        'format': 'best[height<=360]',  # ✅ 軽量化（超重要）
         'outtmpl': video_path,
         'quiet': True
     }
@@ -52,7 +52,7 @@ def manual():
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
-        # ✅ YouTubeかどうかで分岐
+        # ✅ YouTube or 通常ダウンロード
         if "youtube.com" in source_url or "youtu.be" in source_url:
             download_video(source_url, video_path)
         else:
@@ -69,17 +69,17 @@ def manual():
         if os.path.getsize(video_path) < 1024 * 100:
             raise Exception("動画ファイルサイズが小さすぎます（ダウンロード失敗）")
 
-        # ✅ フレーム抽出
+        # ✅ フレーム抽出（軽量化）
         frame_paths = extract_frames(
             video_path,
             work_id,
-            interval_sec=5,
-            max_frames=10
+            interval_sec=10,   # ✅ 軽量化
+            max_frames=5       # ✅ 軽量化
         )
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Geminiに動画アップロード
+        # ✅ Geminiアップロード
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
@@ -138,7 +138,7 @@ def manual():
         }), 500
 
 
-def extract_frames(video_path, work_id, interval_sec=5, max_frames=10):
+def extract_frames(video_path, work_id, interval_sec=10, max_frames=5):
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
