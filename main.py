@@ -22,12 +22,13 @@ def hello():
     return "Video Manual API OK"
 
 
-# ✅ YouTubeダウンロード（軽量化済み）
+# ✅ YouTubeダウンロード（ffmpeg不要＆軽量化）
 def download_video(url, video_path):
     ydl_opts = {
-        'format': 'best[height<=360]',  # ✅ 軽量化（超重要）
+        'format': 'worst[height<=360]',   # ✅ 軽くて高速（重要）
         'outtmpl': video_path,
-        'quiet': True
+        'quiet': True,
+        'noplaylist': True
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -52,10 +53,14 @@ def manual():
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
-        # ✅ YouTube or 通常ダウンロード
+        print("=== START PROCESS ===")
+
+        # ✅ YouTube or 通常URL
         if "youtube.com" in source_url or "youtu.be" in source_url:
+            print("Downloading from YouTube...")
             download_video(source_url, video_path)
         else:
+            print("Downloading via requests...")
             r = requests.get(source_url, timeout=180)
             r.raise_for_status()
 
@@ -66,20 +71,26 @@ def manual():
         if not os.path.exists(video_path):
             raise Exception("動画ファイルが存在しません")
 
-        if os.path.getsize(video_path) < 1024 * 100:
-            raise Exception("動画ファイルサイズが小さすぎます（ダウンロード失敗）")
+        size = os.path.getsize(video_path)
+        print(f"Video size: {size} bytes")
 
-        # ✅ フレーム抽出（軽量化）
+        if size < 1024 * 100:
+            raise Exception("動画が小さすぎる（ダウンロード失敗）")
+
+        # ✅ フレーム抽出（軽量）
         frame_paths = extract_frames(
             video_path,
             work_id,
             interval_sec=10,   # ✅ 軽量化
-            max_frames=5       # ✅ 軽量化
+            max_frames=3       # ✅ さらに軽量（安定）
         )
+
+        print(f"Extracted frames: {len(frame_paths)}")
 
         image_urls = upload_frames(frame_paths, work_id)
 
-        # ✅ Geminiアップロード
+        # ✅ Geminiにアップロード
+        print("Uploading to Gemini...")
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
@@ -87,45 +98,39 @@ def manual():
             uploaded_file = client.files.get(name=uploaded_file.name)
 
         if uploaded_file.state.name != "ACTIVE":
-            return jsonify({"error": "Gemini video processing failed"}), 500
+            raise Exception("Gemini動画処理失敗")
 
         # ✅ プロンプト
         prompt = f"""
 この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
 
-以下の画像URLは、動画から自動抽出したスクリーンショットです。
-適切な手順の位置に Markdown 形式で画像を挿入してください。
-
-画像URL一覧:
+画像URL:
 {json.dumps(image_urls, ensure_ascii=False, indent=2)}
 
-出力形式:
-
-# 概要
-
+出力:
 # 操作手順
 
-## 手順1：〇〇する
-![手順1](画像URL)
-説明文
+## 手順1
+画像URL
+説明
 
-## 手順2：〇〇する
-![手順2](画像URL)
-説明文
-
-# 注意事項
+## 手順2
+画像URL
+説明
 
 条件:
-- Markdown形式で出力してください
-- 画面から分かる内容を中心にしてください
-- 推測しすぎないでください
-- 画像URLは必ず本文内に使ってください
+- Markdown形式
+- 画像URLを必ず使う
 """
+
+        print("Generating content...")
 
         response = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=[uploaded_file, prompt]
         )
+
+        print("=== SUCCESS ===")
 
         return jsonify({
             "manual": response.text,
@@ -133,22 +138,25 @@ def manual():
         })
 
     except Exception as e:
+        print("ERROR:", str(e))
+
         return jsonify({
             "error": str(e)
         }), 500
 
 
-def extract_frames(video_path, work_id, interval_sec=10, max_frames=5):
+def extract_frames(video_path, work_id, interval_sec=10, max_frames=3):
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
-        raise Exception("動画が開けません（ダウンロード失敗の可能性）")
+        raise Exception("動画が開けません")
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 0:
         fps = 30
 
     frame_interval = int(fps * interval_sec)
+
     frame_paths = []
     frame_count = 0
     saved_count = 0
@@ -172,6 +180,7 @@ def extract_frames(video_path, work_id, interval_sec=10, max_frames=5):
 
 def upload_frames(frame_paths, work_id):
     bucket = storage_client.bucket(BUCKET_NAME)
+
     urls = []
 
     for i, frame_path in enumerate(frame_paths, start=1):
