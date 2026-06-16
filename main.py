@@ -3,6 +3,7 @@ import time
 import json
 import cv2
 import requests
+import yt_dlp
 from flask import Flask, request, jsonify
 from google import genai
 from google.cloud import storage
@@ -19,6 +20,17 @@ storage_client = storage.Client()
 @app.route("/")
 def hello():
     return "Video Manual API OK"
+
+
+# ✅ YouTube用ダウンロード
+def download_video(url, video_path):
+    ydl_opts = {
+        'format': 'mp4',
+        'outtmpl': video_path,
+        'quiet': True
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
 
 
 @app.route("/manual", methods=["POST"])
@@ -40,12 +52,24 @@ def manual():
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
-        r = requests.get(source_url, timeout=180)
-        r.raise_for_status()
+        # ✅ YouTubeかどうかで分岐
+        if "youtube.com" in source_url or "youtu.be" in source_url:
+            download_video(source_url, video_path)
+        else:
+            r = requests.get(source_url, timeout=180)
+            r.raise_for_status()
 
-        with open(video_path, "wb") as f:
-            f.write(r.content)
+            with open(video_path, "wb") as f:
+                f.write(r.content)
 
+        # ✅ ダウンロード確認
+        if not os.path.exists(video_path):
+            raise Exception("動画ファイルが存在しません")
+
+        if os.path.getsize(video_path) < 1024 * 100:
+            raise Exception("動画ファイルサイズが小さすぎます（ダウンロード失敗）")
+
+        # ✅ フレーム抽出
         frame_paths = extract_frames(
             video_path,
             work_id,
@@ -55,6 +79,7 @@ def manual():
 
         image_urls = upload_frames(frame_paths, work_id)
 
+        # ✅ Geminiに動画アップロード
         uploaded_file = client.files.upload(file=video_path)
 
         while uploaded_file.state.name == "PROCESSING":
@@ -64,6 +89,7 @@ def manual():
         if uploaded_file.state.name != "ACTIVE":
             return jsonify({"error": "Gemini video processing failed"}), 500
 
+        # ✅ プロンプト
         prompt = f"""
 この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
 
@@ -114,6 +140,9 @@ def manual():
 
 def extract_frames(video_path, work_id, interval_sec=5, max_frames=10):
     cap = cv2.VideoCapture(video_path)
+
+    if not cap.isOpened():
+        raise Exception("動画が開けません（ダウンロード失敗の可能性）")
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 0:
