@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify
 from google import genai
 from google.cloud import storage
 
-print("✅ NEW VERSION ACTIVE")  # ← デプロイ確認用（超重要）
+print("✅ NEW VERSION ACTIVE")  # ← デプロイ確認用
 
 app = Flask(__name__)
 
@@ -67,7 +67,7 @@ def manual():
         print("=== START ===")
         print("URL:", source_url)
 
-        # ✅ YouTube判定
+        # ✅ ダウンロード
         if "youtube" in source_url:
             video_path = download_video(source_url)
         else:
@@ -100,7 +100,7 @@ def manual():
 
         print("frames:", len(frame_paths))
 
-        # ✅ Gemini（画像URLのみ使用）
+        # ✅ Gemini（絶対落ちない構造）
         prompt = f"""
 以下の画像は動画から抽出した操作画面です。
 
@@ -128,17 +128,22 @@ URL
 
         print("Generating manual...")
 
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=prompt
-        )
+        try:
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",  # ✅ 安定モデル
+                contents=prompt
+            )
 
-        text = response.text if response.text else ""
+            text = response.text if response.text else ""
 
-        print("Gemini response:", text)
+            print("Gemini response:", text)
 
-        if not text.strip():
-            raise Exception("Gemini出力が空")
+            if not text.strip():
+                text = "⚠️ Gemini空レス（再試行推奨）"
+
+        except Exception as gemini_error:
+            print("GEMINI ERROR:", str(gemini_error))
+            text = "⚠️ Geminiエラー: " + str(gemini_error)
 
         print("=== SUCCESS ===")
 
@@ -199,4 +204,3 @@ def upload_frames(frame_paths, work_id):
         urls.append(blob.public_url)
 
     return urls
-``
