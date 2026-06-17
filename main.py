@@ -1,11 +1,21 @@
-# ✅ 動画取得をスキップ
-video_path = None
+from flask import Flask, request, jsonify
 
-# ✅ 画像スキップ（テスト時）
-image_urls = []
+app = Flask(__name__)
 
-# ✅ テスト用transcript（そのまま）
-transcript = """
+@app.route("/")
+def hello():
+    return "OK"
+
+
+@app.route("/manual", methods=["POST"])
+def manual():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({"error": "no input"})
+
+    # ✅ 完全ダミー（ここ重要）
+    transcript = """
 ログイン画面を開きます。
 ユーザーIDを入力します。
 パスワードを入力します。
@@ -14,7 +24,7 @@ transcript = """
 保存ボタンをクリックします。
 """
 
-return jsonify({
-    "transcript": transcript,
-    "images": image_urls
-})
+    return jsonify({
+        "transcript": transcript,
+        "images": []
+    })
