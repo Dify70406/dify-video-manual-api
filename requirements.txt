@@ -1,5 +1,6 @@
 flask
 gunicorn
+python-docx
 requests
 google-cloud-storage
 opencv-python-headless
