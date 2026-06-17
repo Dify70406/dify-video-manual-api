@@ -4,13 +4,8 @@ import uuid
 import re
 import os
 from youtube_transcript_api import YouTubeTranscriptApi
-import yt_dlp
-from openai import OpenAI
 
 app = Flask(__name__)
-
-client = OpenAI()  # APIキーは環境変数
-
 
 @app.route("/")
 def hello():
@@ -23,34 +18,14 @@ def extract_video_id(url):
     return match.group(1) if match else None
 
 
-# ✅ 字幕取得
+# ✅ 安全な字幕取得
 def get_transcript(video_id):
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
         return "\n".join([t["text"] for t in transcript])
-    except:
+    except Exception as e:
+        print(f"字幕取得エラー: {e}")
         return None
-
-
-# ✅ 音声ダウンロード
-def download_audio(url, output_path):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_path,
-        'quiet': True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-
-# ✅ Whisper API
-def speech_to_text(file_path):
-    with open(file_path, "rb") as f:
-        transcript = client.audio.transcriptions.create(
-            file=f,
-            model="gpt-4o-mini-transcribe"
-        )
-    return transcript.text
 
 
 @app.route("/manual", methods=["GET", "POST"])
@@ -59,50 +34,55 @@ def manual():
         data = request.get_json(silent=True)
 
         text = None
+        video_id = None
 
         if data:
+            # ✅ YouTube URL対応（両方OK）
             url = data.get("youtube_url") or data.get("video_url")
 
-            # ✅ YouTube処理
             if url:
                 video_id = extract_video_id(url)
 
-                # ① 字幕取得
+            # ✅ 字幕取得
+            if video_id:
                 text = get_transcript(video_id)
 
-                # ② 字幕ダメなら音声解析
-                if not text:
-                    audio_path = "/tmp/audio.%(ext)s"
-                    download_audio(url, audio_path)
-
-                    # 実ファイル探す
-                    for file in os.listdir("/tmp"):
-                        if file.startswith("audio"):
-                            full_path = f"/tmp/{file}"
-                            text = speech_to_text(full_path)
-                            break
-
-            # ✅ テキスト fallback
+            # ✅ fallback（テキスト）
             if not text and data.get("text"):
                 text = data.get("text")
 
+        # ✅ 最終fallback
         if not text:
-            text = "文字起こしできませんでした"
+            text = "1. サンプル手順\n説明文です"
 
-        # ✅ Word生成
+        # ✅ Word作成
         doc = Document()
-        for line in text.split("\n"):
-            if line.strip():
-                doc.add_paragraph(line)
 
+        # --- テキスト ---
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            doc.add_paragraph(line)
+
+        # ✅ 画像追加（ここ今回のポイント）
+        image_path = "/app/sample.png"
+
+        if os.path.exists(image_path):
+            doc.add_paragraph("")  # 空行
+            doc.add_picture(image_path)
+
+        # ✅ ファイル保存
         filename = f"{uuid.uuid4()}.docx"
         file_path = f"/tmp/{filename}"
         doc.save(file_path)
 
+        # ✅ ダウンロード返却
         return send_file(
             file_path,
             as_attachment=True,
-            download_name="manual.docx"
+            download_name="manual.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
     except Exception as e:
