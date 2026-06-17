@@ -1,8 +1,5 @@
-from flask import Flask, request, send_file, jsonify
-from docx import Document
-import uuid
+from flask import Flask, request, jsonify
 import re
-import os
 from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
@@ -12,7 +9,7 @@ def hello():
     return "OK"
 
 
-# ✅ YouTube ID抽出（Shorts対応版）
+# ✅ YouTube ID抽出（Shorts対応）
 def extract_video_id(url):
     match = re.search(r"(?:v=|youtu\.be/|shorts/)([^&?/]+)", url)
     return match.group(1) if match else None
@@ -21,8 +18,13 @@ def extract_video_id(url):
 # ✅ 字幕取得（安全版）
 def get_transcript(video_id):
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        return "\n".join([t["text"] for t in transcript])
+        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+
+        # 自動字幕も含めて1つ取得
+        for t in transcripts:
+            data = t.fetch()
+            return "\n".join([x["text"] for x in data])
+
     except Exception as e:
         print(f"字幕取得エラー: {e}")
         return None
@@ -37,7 +39,6 @@ def manual():
         video_id = None
 
         if data:
-            # ✅ YouTube URL取得（両対応）
             url = data.get("youtube_url") or data.get("video_url")
 
             if url:
@@ -45,51 +46,21 @@ def manual():
 
             # ✅ 字幕取得
             if video_id:
-                try:
-                    text = get_transcript(video_id)
-                except:
-                    text = None
+                text = get_transcript(video_id)
 
-            # ✅ テキスト fallback
-            if not text and data.get("text"):
-                text = data.get("text")
-
-        # ✅ 最終fallback
+        # ✅ fallback
         if not text:
-            text = "字幕が取得できない動画、または入力テキストがありません"
+            text = "字幕が取得できませんでした"
 
-        # ✅ Word作成
-        doc = Document()
-
-        # --- テキスト ---
-        for line in text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            doc.add_paragraph(line)
-
-        # ✅ 画像追加（sample.png）
-        image_path = "/app/sample.png"
-
-        if os.path.exists(image_path):
-            doc.add_paragraph("")
-            doc.add_picture(image_path)
-
-        # ✅ ファイル保存
-        filename = f"{uuid.uuid4()}.docx"
-        file_path = f"/tmp/{filename}"
-        doc.save(file_path)
-
-        # ✅ ダウンロード返却
-        return send_file(
-            file_path,
-            as_attachment=True,
-            download_name="manual.docx",
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+        # ✅ ここが重要（JSON返す）
+        return jsonify({
+            "text": text
+        })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
 if __name__ == "__main__":
