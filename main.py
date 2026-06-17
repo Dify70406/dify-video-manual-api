@@ -1,30 +1,56 @@
 from flask import Flask, request, send_file, jsonify
 from docx import Document
 import uuid
-from youtube_transcript_api import YouTubeTranscriptApi
 import re
+import os
+from youtube_transcript_api import YouTubeTranscriptApi
+import yt_dlp
+from openai import OpenAI
 
 app = Flask(__name__)
+
+client = OpenAI()  # APIキーは環境変数
+
 
 @app.route("/")
 def hello():
     return "OK"
 
 
-# ✅ YouTube URLからID抽出
+# ✅ YouTube ID抽出
 def extract_video_id(url):
     match = re.search(r"(?:v=|youtu\.be/)([^&]+)", url)
     return match.group(1) if match else None
 
 
-# ✅ 字幕取得（安全版）
+# ✅ 字幕取得
 def get_transcript(video_id):
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        text = "\n".join([t["text"] for t in transcript])
-        return text
-    except Exception:
-        return "字幕が取得できませんでした"
+        return "\n".join([t["text"] for t in transcript])
+    except:
+        return None
+
+
+# ✅ 音声ダウンロード
+def download_audio(url, output_path):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_path,
+        'quiet': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+
+
+# ✅ Whisper API
+def speech_to_text(file_path):
+    with open(file_path, "rb") as f:
+        transcript = client.audio.transcriptions.create(
+            file=f,
+            model="gpt-4o-mini-transcribe"
+        )
+    return transcript.text
 
 
 @app.route("/manual", methods=["GET", "POST"])
@@ -32,34 +58,42 @@ def manual():
     try:
         data = request.get_json(silent=True)
 
-        text = ""
-        video_id = None
+        text = None
 
         if data:
-            # ✅ YouTube対応（両対応）
-            if data.get("youtube_url"):
-                video_id = extract_video_id(data["youtube_url"])
-            elif data.get("video_url"):
-                video_id = extract_video_id(data["video_url"])
+            url = data.get("youtube_url") or data.get("video_url")
 
-            if video_id:
+            # ✅ YouTube処理
+            if url:
+                video_id = extract_video_id(url)
+
+                # ① 字幕取得
                 text = get_transcript(video_id)
 
-            # ✅ フォールバック（テキスト）
+                # ② 字幕ダメなら音声解析
+                if not text:
+                    audio_path = "/tmp/audio.%(ext)s"
+                    download_audio(url, audio_path)
+
+                    # 実ファイル探す
+                    for file in os.listdir("/tmp"):
+                        if file.startswith("audio"):
+                            full_path = f"/tmp/{file}"
+                            text = speech_to_text(full_path)
+                            break
+
+            # ✅ テキスト fallback
             if not text and data.get("text"):
                 text = data.get("text")
 
         if not text:
-            text = "1. サンプル手順\n説明文です"
+            text = "文字起こしできませんでした"
 
         # ✅ Word生成
         doc = Document()
-
         for line in text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            doc.add_paragraph(line)
+            if line.strip():
+                doc.add_paragraph(line)
 
         filename = f"{uuid.uuid4()}.docx"
         file_path = f"/tmp/{filename}"
@@ -68,8 +102,7 @@ def manual():
         return send_file(
             file_path,
             as_attachment=True,
-            download_name="manual.docx",
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            download_name="manual.docx"
         )
 
     except Exception as e:
