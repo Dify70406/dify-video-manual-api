@@ -1,32 +1,39 @@
-from flask import Flask, request, jsonify
-from docx import Document
-import uuid
-import os
-
-app = Flask(__name__)
-
-# デバッグ用
-@app.route("/")
-def hello():
-    return "OK"
-
-
 @app.route("/manual", methods=["POST"])
 def manual():
-    data = request.get_json(silent=True)
+    try:
+        data = request.get_json(silent=True)
 
-    if not data:
-        return jsonify({"error": "no input"})
+        text = ""
+        if data and "text" in data and data["text"]:
+            text = data["text"]
+        else:
+            # fallback（超重要）
+            text = "テスト\n1. サンプル手順"
 
-    text = data.get("text", "")
+        from docx import Document
+        doc = Document()
 
-    # Word生成
-    doc = Document()
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            doc.add_paragraph(line)
 
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
+        import uuid
+        filename = f"{uuid.uuid4()}.docx"
+        file_path = f"/tmp/{filename}"
+        doc.save(file_path)
 
-        if line[0].isdigit() and "." in line:
-            p = doc.add_paragraph()
+        from flask import send_file
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name="manual.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    except Exception as e:
+        return {
+            "error": str(e)
+        }, 500
