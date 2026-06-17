@@ -1,5 +1,5 @@
 @app.route("/manual", methods=["POST"])
 def manual():
-    return jsonify({
+    return {
         "file_url": "https://example.com/test.docx"
-    })
+    }
