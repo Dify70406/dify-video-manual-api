@@ -1,10 +1,4 @@
 Flask
 gunicorn
 youtube-transcript-api
-requests
-google-cloud-storage
-opencv-python-headless
-yt-dlp
-ffmpeg-python
-openai
 python-docx
