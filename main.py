@@ -12,9 +12,9 @@ def hello():
     return "OK"
 
 
-# ✅ YouTube ID抽出（修正版）
+# ✅ YouTube ID抽出（Shorts対応版）
 def extract_video_id(url):
-    match = re.search(r"(?:v=|youtu\.be/)([^&]+)", url)
+    match = re.search(r"(?:v=|youtu\.be/|shorts/)([^&?/]+)", url)
     return match.group(1) if match else None
 
 
@@ -37,31 +37,31 @@ def manual():
         video_id = None
 
         if data:
-            # ✅ YouTube URL対応（両対応）
+            # ✅ YouTube URL取得（両対応）
             url = data.get("youtube_url") or data.get("video_url")
 
             if url:
                 video_id = extract_video_id(url)
 
-            # ✅ 字幕取得（安全に）
+            # ✅ 字幕取得
             if video_id:
                 try:
                     text = get_transcript(video_id)
                 except:
                     text = None
 
-            # ✅ fallback（テキスト）
+            # ✅ テキスト fallback
             if not text and data.get("text"):
                 text = data.get("text")
 
         # ✅ 最終fallback
         if not text:
-            text = "1. サンプル手順\n説明文です"
+            text = "字幕が取得できない動画、または入力テキストがありません"
 
         # ✅ Word作成
         doc = Document()
 
-        # --- テキスト挿入 ---
+        # --- テキスト ---
         for line in text.split("\n"):
             line = line.strip()
             if not line:
@@ -72,7 +72,7 @@ def manual():
         image_path = "/app/sample.png"
 
         if os.path.exists(image_path):
-            doc.add_paragraph("")  # 空行
+            doc.add_paragraph("")
             doc.add_picture(image_path)
 
         # ✅ ファイル保存
