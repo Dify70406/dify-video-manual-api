@@ -6,16 +6,13 @@ import requests
 import traceback
 from flask import Flask, request, jsonify, send_file
 from google import genai
-from google.cloud import storage
 from docx import Document
 
 app = Flask(__name__)
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-BUCKET_NAME = os.environ.get("BUCKET_NAME", "dify-video-manual-images")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-storage_client = storage.Client()
 
 
 @app.route("/")
@@ -35,14 +32,19 @@ def manual():
     video_path = f"/tmp/{work_id}.mp4"
 
     try:
+        # 動画をダウンロード
         r = requests.get(video_url, timeout=180)
         r.raise_for_status()
 
         with open(video_path, "wb") as f:
             f.write(r.content)
 
-        frame_paths = extract_frames(video_path, work_id)
-        image_urls = upload_frames(frame_paths, work_id)
+        # 切り分けのため、Cloud Storageへの画像アップロードは一時停止
+        # frame_paths = extract_frames(video_path, work_id)
+        # image_urls = upload_frames(frame_paths, work_id)
+
+        frame_paths = []
+        image_urls = []
 
         uploaded_file = client.files.upload(file=video_path)
 
@@ -54,10 +56,7 @@ def manual():
             return jsonify({"error": "Gemini video processing failed"}), 500
 
         prompt = f"""
-この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
-
-画像URL一覧:
-{json.dumps(image_urls, ensure_ascii=False, indent=2)}
+この動画を分析して、操作手順書を作成してください。
 
 出力形式:
 # 概要
@@ -65,12 +64,17 @@ def manual():
 # 操作手順
 
 ## 手順1：〇〇する
-![手順1](画像URL)
+説明文
+
+## 手順2：〇〇する
 説明文
 
 # 注意事項
 
-Markdown形式で出力してください。
+条件:
+- Markdown形式で出力してください
+- 画面から分かる内容を中心にしてください
+- 推測しすぎないでください
 """
 
         response = client.models.generate_content(
@@ -161,16 +165,3 @@ def extract_frames(video_path, work_id, interval_sec=5, max_frames=10):
 
     cap.release()
     return frame_paths
-
-
-def upload_frames(frame_paths, work_id):
-    bucket = storage_client.bucket(BUCKET_NAME)
-    urls = []
-
-    for i, frame_path in enumerate(frame_paths, start=1):
-        blob_name = f"manual_frames/{work_id}/frame_{i}.jpg"
-        blob = bucket.blob(blob_name)
-        blob.upload_from_filename(frame_path, content_type="image/jpeg")
-        urls.append(blob.public_url)
-
-    return urls
