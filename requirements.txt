@@ -5,3 +5,4 @@ google-genai
 opencv-python-headless
 python-docx
 yt-dlp
+webvtt-py
