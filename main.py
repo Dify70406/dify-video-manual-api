@@ -3,6 +3,7 @@ import time
 import json
 import cv2
 import requests
+import traceback
 from flask import Flask, request, jsonify, send_file
 from google import genai
 from google.cloud import storage
@@ -49,6 +50,9 @@ def manual():
             time.sleep(5)
             uploaded_file = client.files.get(name=uploaded_file.name)
 
+        if uploaded_file.state.name != "ACTIVE":
+            return jsonify({"error": "Gemini video processing failed"}), 500
+
         prompt = f"""
 この動画を分析して、スクリーンショット付きの操作手順書を作成してください。
 
@@ -80,44 +84,54 @@ Markdown形式で出力してください。
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 @app.route("/word", methods=["POST"])
 def word():
-    data = request.get_json(silent=True) or {}
-    text = data.get("text", "")
+    try:
+        data = request.get_json(silent=True) or {}
+        text = data.get("text", "")
 
-    if not text:
-        text = "手順を生成できませんでした"
+        if not text:
+            text = "手順を生成できませんでした"
 
-    doc_path = f"/tmp/manual_{int(time.time())}.docx"
+        doc_path = f"/tmp/manual_{int(time.time())}.docx"
 
-    doc = Document()
-    doc.add_heading("操作手順書", level=1)
+        doc = Document()
+        doc.add_heading("操作手順書", level=1)
 
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
 
-        if line.startswith("# "):
-            doc.add_heading(line.replace("# ", ""), level=1)
-        elif line.startswith("## "):
-            doc.add_heading(line.replace("## ", ""), level=2)
-        elif line.startswith("### "):
-            doc.add_heading(line.replace("### ", ""), level=3)
-        else:
-            doc.add_paragraph(line)
+            if line.startswith("# "):
+                doc.add_heading(line.replace("# ", ""), level=1)
+            elif line.startswith("## "):
+                doc.add_heading(line.replace("## ", ""), level=2)
+            elif line.startswith("### "):
+                doc.add_heading(line.replace("### ", ""), level=3)
+            else:
+                doc.add_paragraph(line)
 
-    doc.save(doc_path)
+        doc.save(doc_path)
 
-    return send_file(
-        doc_path,
-        as_attachment=True,
-        download_name="manual.docx",
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
+        return send_file(
+            doc_path,
+            as_attachment=True,
+            download_name="manual.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 def extract_frames(video_path, work_id, interval_sec=5, max_frames=10):
