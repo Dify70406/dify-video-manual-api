@@ -1,6 +1,5 @@
 Flask
 gunicorn
-python-docx
 youtube-transcript-api
 requests
 google-cloud-storage
