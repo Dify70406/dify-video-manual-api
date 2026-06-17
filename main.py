@@ -12,13 +12,13 @@ def hello():
     return "OK"
 
 
-# ✅ YouTube ID抽出
+# ✅ YouTube ID抽出（修正版）
 def extract_video_id(url):
     match = re.search(r"(?:v=|youtu\.be/)([^&]+)", url)
     return match.group(1) if match else None
 
 
-# ✅ 安全な字幕取得
+# ✅ 字幕取得（安全版）
 def get_transcript(video_id):
     try:
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
@@ -37,15 +37,18 @@ def manual():
         video_id = None
 
         if data:
-            # ✅ YouTube URL対応（両方OK）
+            # ✅ YouTube URL対応（両対応）
             url = data.get("youtube_url") or data.get("video_url")
 
             if url:
                 video_id = extract_video_id(url)
 
-            # ✅ 字幕取得
+            # ✅ 字幕取得（安全に）
             if video_id:
-                text = get_transcript(video_id)
+                try:
+                    text = get_transcript(video_id)
+                except:
+                    text = None
 
             # ✅ fallback（テキスト）
             if not text and data.get("text"):
@@ -58,14 +61,14 @@ def manual():
         # ✅ Word作成
         doc = Document()
 
-        # --- テキスト ---
+        # --- テキスト挿入 ---
         for line in text.split("\n"):
             line = line.strip()
             if not line:
                 continue
             doc.add_paragraph(line)
 
-        # ✅ 画像追加（ここ今回のポイント）
+        # ✅ 画像追加（sample.png）
         image_path = "/app/sample.png"
 
         if os.path.exists(image_path):
