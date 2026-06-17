@@ -1,13 +1,12 @@
 import os
 import time
-import json
 import cv2
 import requests
 import yt_dlp
 from flask import Flask, request, jsonify
 from google.cloud import storage
 
-print("✅ NEW VERSION ACTIVE")
+print("✅ TEST VERSION ACTIVE")
 
 app = Flask(__name__)
 
@@ -97,8 +96,16 @@ def manual():
 
         print("frames:", len(frame_paths))
 
-        # ✅ 仮のtranscript（あとでWhisper等に差し替え）
-        transcript = "この動画ではログインして操作を行う手順を説明しています。"
+        # ✅ ★テスト用：ちゃんとした手順っぽいtranscript
+        transcript = """
+ログイン画面を開きます。
+ユーザーIDを入力します。
+パスワードを入力します。
+ログインボタンをクリックします。
+トップメニューから「設定」をクリックします。
+設定画面で必要な項目を入力します。
+保存ボタンをクリックして設定を確定します。
+"""
 
         print("=== SUCCESS ===")
 
