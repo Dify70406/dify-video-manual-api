@@ -1,36 +1,46 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, send_file, jsonify
+from docx import Document
+import uuid
 
 app = Flask(__name__)
 
-# 動作確認用（ブラウザで開く）
 @app.route("/")
 def hello():
     return "OK"
 
-
-# ★ difyから叩くAPI
 @app.route("/manual", methods=["GET", "POST"])
 def manual():
     try:
-        # JSON取得（失敗しても落ちない）
         data = request.get_json(silent=True)
 
         text = ""
         if data and "text" in data:
             text = data.get("text", "")
 
-        # とりあえずダミー返す
-        return jsonify({
-            "file_url": "https://example.com/test.docx",
-            "received_text_length": len(text)
-        })
+        if not text:
+            text = "1. サンプル手順\n説明文です"
+
+        doc = Document()
+
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            doc.add_paragraph(line)
+
+        filename = f"{uuid.uuid4()}.docx"
+        file_path = f"/tmp/{filename}"
+        doc.save(file_path)
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name="manual.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
 
     except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
-
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # Cloud Runはこのポート必須
     app.run(host="0.0.0.0", port=8080)
