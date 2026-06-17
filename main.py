@@ -5,17 +5,13 @@ import cv2
 import requests
 import yt_dlp
 from flask import Flask, request, jsonify
-from google import genai
 from google.cloud import storage
 
-print("✅ NEW VERSION ACTIVE")  # ← デプロイ確認用
+print("✅ NEW VERSION ACTIVE")
 
 app = Flask(__name__)
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 BUCKET_NAME = os.environ.get("BUCKET_NAME", "dify-video-manual-images")
-
-client = genai.Client(api_key=GEMINI_API_KEY)
 storage_client = storage.Client()
 
 
@@ -43,13 +39,14 @@ def download_video(url):
     return filename
 
 
+# ✅ メインAPI
 @app.route("/manual", methods=["POST"])
 def manual():
     data = request.get_json(silent=True)
 
     if not data:
         return jsonify({
-            "manual": "",
+            "transcript": "",
             "images": [],
             "error": "JSON body is required"
         })
@@ -58,7 +55,7 @@ def manual():
 
     if not source_url:
         return jsonify({
-            "manual": "",
+            "transcript": "",
             "images": [],
             "error": "URLがありません"
         })
@@ -67,7 +64,7 @@ def manual():
         print("=== START ===")
         print("URL:", source_url)
 
-        # ✅ ダウンロード
+        # ✅ 動画取得
         if "youtube" in source_url:
             video_path = download_video(source_url)
         else:
@@ -100,55 +97,13 @@ def manual():
 
         print("frames:", len(frame_paths))
 
-        # ✅ Gemini（絶対落ちない構造）
-        prompt = f"""
-以下の画像は動画から抽出した操作画面です。
-
-これを元に操作マニュアルを作成してください。
-
-画像一覧:
-{json.dumps(image_urls, ensure_ascii=False, indent=2)}
-
-出力形式：
-
-# 操作手順
-
-## 手順1
-URL
-説明
-
-## 手順2
-URL
-説明
-
-条件：
-- Markdown形式
-- 必ず画像URLを使う
-"""
-
-        print("Generating manual...")
-
-        try:
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",  # ✅ 安定モデル
-                contents=prompt
-            )
-
-            text = response.text if response.text else ""
-
-            print("Gemini response:", text)
-
-            if not text.strip():
-                text = "⚠️ Gemini空レス（再試行推奨）"
-
-        except Exception as gemini_error:
-            print("GEMINI ERROR:", str(gemini_error))
-            text = "⚠️ Geminiエラー: " + str(gemini_error)
+        # ✅ 仮のtranscript（あとでWhisper等に差し替え）
+        transcript = "この動画ではログインして操作を行う手順を説明しています。"
 
         print("=== SUCCESS ===")
 
         return jsonify({
-            "manual": text,
+            "transcript": transcript,
             "images": image_urls
         })
 
@@ -156,12 +111,13 @@ URL
         print("ERROR:", str(e))
 
         return jsonify({
-            "manual": "",
+            "transcript": "",
             "images": [],
             "error": str(e)
         })
 
 
+# ✅ フレーム抽出（10秒ごと / 最大3枚）
 def extract_frames(video_path, work_id):
     cap = cv2.VideoCapture(video_path)
 
@@ -192,6 +148,7 @@ def extract_frames(video_path, work_id):
     return frame_paths
 
 
+# ✅ GCSアップロード
 def upload_frames(frame_paths, work_id):
     bucket = storage_client.bucket(BUCKET_NAME)
 
