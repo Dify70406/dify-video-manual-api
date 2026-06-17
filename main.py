@@ -1,7 +1,11 @@
 from flask import Flask, request, jsonify
+from docx import Document
+import uuid
+import os
 
 app = Flask(__name__)
 
+# デバッグ用
 @app.route("/")
 def hello():
     return "OK"
@@ -14,17 +18,15 @@ def manual():
     if not data:
         return jsonify({"error": "no input"})
 
-    # ✅ 完全ダミー（ここ重要）
-    transcript = """
-ログイン画面を開きます。
-ユーザーIDを入力します。
-パスワードを入力します。
-ログインボタンをクリックします。
-設定画面を開きます。
-保存ボタンをクリックします。
-"""
+    text = data.get("text", "")
 
-    return jsonify({
-        "transcript": transcript,
-        "images": []
-    })
+    # Word生成
+    doc = Document()
+
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        if line[0].isdigit() and "." in line:
+            p = doc.add_paragraph()
