@@ -241,7 +241,7 @@ def word():
 def normalize_manual_text(text: str) -> str:
     """
     AIが前置き文を返した場合に、
-    最初の # 概要 / # 操作手順 / # 注意事項 から始まるように整形する。
+    最初の # 概要 / # 操作手順 / # 注意事項 / ## 手順1 から始まるように整形する。
     """
     if not text:
         return ""
@@ -263,7 +263,8 @@ def normalize_manual_text(text: str) -> str:
     )
 
     for i, line in enumerate(lines):
-        if line.strip().startswith(heading_patterns):
+        line = line.strip()
+        if any(line.startswith(pattern) for pattern in heading_patterns):
             start_index = i
             break
 
@@ -311,24 +312,23 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.*tt*)
+    files = glob.glob("/tmp/youtube_subtitle*.v*t")
 
-   *if not*files:
-*       re*urn*"*幕ファ*ルが**か*ません*した。*
+   *if not fi*es:
+*       re*urn "字幕*ァイルが見*かりません*した。"
 
-   *subtitle_*ext*= ""
+   *subtitle_*ext = ""
+**   for fi*e in*files:
+  *     with*open(file* "r", enc*ding="*tf-8",*errors="i*nore")*as f:
+   *       *subtitle_*ext += "\*" + v*t_to_text*f*read())
 
-*  *for file*in files*
-*       wi*h open(fi*e, "r*, encodin**"utf*8*, errors*"*gnore")*as f*
-        *   subtit*e_text*+= "\*"*+ v*t_to*text(f*read())
+*   if not*subtitle_*ext.strip*):
+      * return "*幕が空でした。"
+*    retur* subtitle*text
 
-*   if*not subti*le*text*strip():
-*       re*urn*"字幕**でした*"
 
-*   return*subtitle_*ext*
-
-def*cleanup_s*b*itle_file**):
-   *for file*in glob*glob("/*mp/y*utube_sub*itle*"):
+de* cleanup_*ubtitle_f*les():
+  * for file*in glob.g*ob("/tmp/youtube_subtitle*"):
         try:
             os.remove(file)
         except Exception:
