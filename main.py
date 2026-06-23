@@ -40,12 +40,18 @@ def manual():
 以下はYouTube動画の字幕です。
 この字幕をもとに、操作手順書を作成してください。
 
+必ず以下の形式だけで出力してください。
+前置き、あいさつ、補足説明は禁止です。
+「承知しました」「以下に示します」などの文章は出力しないでください。
+
 字幕:
 {subtitle_text}
 
 出力形式:
 
 # 概要
+
+概要説明
 
 # 操作手順
 
@@ -62,6 +68,8 @@ def manual():
 
 条件:
 - Markdown形式で出力してください
+- 上記の見出し以外は出力しないでください
+- 前置きや会話文は禁止です
 - 字幕から分かる内容だけを使ってください
 - 推測しすぎないでください
 """
@@ -72,7 +80,7 @@ def manual():
                 )
 
                 return jsonify({
-                    "manual": response.text,
+                    "manual": normalize_manual_text(response.text),
                     "source": "youtube_subtitle"
                 })
 
@@ -89,7 +97,7 @@ def manual():
                 manual_text = analyze_video_file(video_path)
 
                 return jsonify({
-                    "manual": manual_text,
+                    "manual": normalize_manual_text(manual_text),
                     "source": "video_url"
                 })
 
@@ -102,7 +110,7 @@ def manual():
             work_id = str(int(time.time()))
             video_path = f"/tmp/{work_id}{ext}"
 
-            # data:image/...;base64,... のような形式にも対応
+            # data:video/...;base64,... のような形式にも対応
             if "," in content_b64:
                 content_b64 = content_b64.split(",", 1)[1]
 
@@ -114,7 +122,7 @@ def manual():
             manual_text = analyze_video_file(video_path)
 
             return jsonify({
-                "manual": manual_text,
+                "manual": normalize_manual_text(manual_text),
                 "source": "sharepoint_file",
                 "file_name": file_name
             })
@@ -144,6 +152,10 @@ def analyze_video_file(video_path: str) -> str:
     prompt = """
 この動画を分析して操作手順書を作成してください。
 
+必ず以下の形式だけで出力してください。
+前置き、あいさつ、補足説明は禁止です。
+「承知しました」「以下に示します」などの文章は出力しないでください。
+
 出力形式:
 
 # 概要
@@ -163,7 +175,11 @@ def analyze_video_file(video_path: str) -> str:
 
 # 注意事項
 
-Markdown形式で出力してください。
+条件:
+- Markdown形式で出力してください
+- 上記の見出し以外は出力しないでください
+- 前置きや会話文は禁止です
+- 動画に具体的な操作手順が含まれていない場合は、その旨を簡潔に記載してください
 """
 
     response = client.models.generate_content(
@@ -186,6 +202,8 @@ def word():
         if not text:
             text = "手順を生成できませんでした"
 
+        text = normalize_manual_text(text)
+
         doc_path = f"/tmp/manual_{int(time.time())}.docx"
 
         doc = Document()
@@ -198,9 +216,9 @@ def word():
                 continue
 
             if line.startswith("# "):
-                doc.add_heading(line.replace("# ", ""), level=1)
+                doc.add_heading(line.replace("# ", "").strip(), level=1)
             elif line.startswith("## "):
-                doc.add_heading(line.replace("## ", ""), level=2)
+                doc.add_heading(line.replace("## ", "").strip(), level=2)
             else:
                 doc.add_paragraph(line)
 
@@ -218,6 +236,41 @@ def word():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
+
+
+def normalize_manual_text(text: str) -> str:
+    """
+    AIが前置き文を返した場合に、
+    最初の # 概要 / # 操作手順 / # 注意事項 から始まるように整形する。
+    """
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # ```markdown ... ``` や ``` ... ``` を除去
+    text = text.replace("```markdown", "").replace("```md", "").replace("```", "").strip()
+
+    lines = text.splitlines()
+
+    start_index = None
+    heading_patterns = (
+        "# 概要",
+        "#操作手順",
+        "# 操作手順",
+        "# 注意事項",
+        "## 手順1",
+    )
+
+    for i, line in enumerate(lines):
+        if line.strip().startswith(heading_patterns):
+            start_index = i
+            break
+
+    if start_index is not None:
+        text = "\n".join(lines[start_index:]).strip()
+
+    return text
 
 
 def is_youtube_url(url):
@@ -258,25 +311,24 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt")
+    files = glob.glob("/tmp/youtube_subtitle*.*tt*)
 
-    if not files:
-        return "字幕ファイルが見つかりませんでした。"
+   *if not*files:
+*       re*urn*"*幕ファ*ルが**か*ません*した。*
 
-    subtitle_text = ""
+   *subtitle_*ext*= ""
 
-    for file in files:
-        with open(file, "r", encoding="utf-8", errors="ignore") as f:
-            subtitle_text += "\n" + vtt_to_text(f.read())
+*  *for file*in files*
+*       wi*h open(fi*e, "r*, encodin**"utf*8*, errors*"*gnore")*as f*
+        *   subtit*e_text*+= "\*"*+ v*t_to*text(f*read())
 
-    if not subtitle_text.strip():
-        return "字幕が空でした。"
+*   if*not subti*le*text*strip():
+*       re*urn*"字幕**でした*"
 
-    return subtitle_text
+*   return*subtitle_*ext*
 
-
-def cleanup_subtitle_files():
-    for file in glob.glob("/tmp/youtube_subtitle*"):
+def*cleanup_s*b*itle_file**):
+   *for file*in glob*glob("/*mp/y*utube_sub*itle*"):
         try:
             os.remove(file)
         except Exception:
