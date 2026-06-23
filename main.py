@@ -312,23 +312,25 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.v*t")
+    files = glob.glob("/tmp/youtube_subtitle*.vtt")
 
-   *if not fi*es:
-*       re*urn "字幕*ァイルが見*かりません*した。"
+    if not files:
+        return "字幕ファイルが見つかりませんでした。"
 
-   *subtitle_*ext = ""
-**   for fi*e in*files:
-  *     with*open(file* "r", enc*ding="*tf-8",*errors="i*nore")*as f:
-   *       *subtitle_*ext += "\*" + v*t_to_text*f*read())
+    subtitle_text = ""
 
-*   if not*subtitle_*ext.strip*):
-      * return "*幕が空でした。"
-*    retur* subtitle*text
+    for file in files:
+        with open(file, "r", encoding="utf-8", errors="ignore") as f:
+            subtitle_text += "\n" + vtt_to_text(f.read())
+
+    if not subtitle_text.strip():
+        return "字幕が空でした。"
+
+    return subtitle_text
 
 
-de* cleanup_*ubtitle_f*les():
-  * for file*in glob.g*ob("/tmp/youtube_subtitle*"):
+def cleanup_subtitle_files():
+    for file in glob.glob("/tmp/youtube_subtitle*"):
         try:
             os.remove(file)
         except Exception:
