@@ -5,6 +5,7 @@ import traceback
 import subprocess
 import re
 import glob
+import base64
 
 from flask import Flask, request, jsonify, send_file
 from google import genai
@@ -24,16 +25,18 @@ def hello():
 @app.route("/manual", methods=["POST"])
 def manual():
     data = request.get_json(silent=True) or {}
-    video_url = data.get("video_url")
 
-    if not video_url:
-        return jsonify({"error": "video_url is required"}), 400
+    video_url = data.get("video_url")
+    file_name = data.get("file_name")
+    content_b64 = data.get("content")
 
     try:
-        if is_youtube_url(video_url):
-            subtitle_text = get_youtube_subtitle(video_url)
+        # ① 従来どおり video_url が来た場合
+        if video_url:
+            if is_youtube_url(video_url):
+                subtitle_text = get_youtube_subtitle(video_url)
 
-            prompt = f"""
+                prompt = f"""
 以下はYouTube動画の字幕です。
 この字幕をもとに、操作手順書を作成してください。
 
@@ -63,38 +66,82 @@ def manual():
 - 推測しすぎないでください
 """
 
-            response = client.models.generate_content(
-                model="gemini-2.5-pro",
-                contents=prompt
-            )
+                response = client.models.generate_content(
+                    model="gemini-2.5-pro",
+                    contents=prompt
+                )
+
+                return jsonify({
+                    "manual": response.text,
+                    "source": "youtube_subtitle"
+                })
+
+            else:
+                work_id = str(int(time.time()))
+                video_path = f"/tmp/{work_id}.mp4"
+
+                r = requests.get(video_url, timeout=300)
+                r.raise_for_status()
+
+                with open(video_path, "wb") as f:
+                    f.write(r.content)
+
+                manual_text = analyze_video_file(video_path)
+
+                return jsonify({
+                    "manual": manual_text,
+                    "source": "video_url"
+                })
+
+        # ② Power Automate から Base64 動画が来た場合
+        elif file_name and content_b64:
+            ext = os.path.splitext(file_name)[1].lower()
+            if not ext:
+                ext = ".mp4"
+
+            work_id = str(int(time.time()))
+            video_path = f"/tmp/{work_id}{ext}"
+
+            # data:image/...;base64,... のような形式にも対応
+            if "," in content_b64:
+                content_b64 = content_b64.split(",", 1)[1]
+
+            video_bytes = base64.b64decode(content_b64)
+
+            with open(video_path, "wb") as f:
+                f.write(video_bytes)
+
+            manual_text = analyze_video_file(video_path)
 
             return jsonify({
-                "manual": response.text,
-                "source": "youtube_subtitle"
+                "manual": manual_text,
+                "source": "sharepoint_file",
+                "file_name": file_name
             })
 
         else:
-            work_id = str(int(time.time()))
-            video_path = f"/tmp/{work_id}.mp4"
+            return jsonify({
+                "error": "video_url または file_name + content が必要です"
+            }), 400
 
-            r = requests.get(video_url, timeout=300)
-            r.raise_for_status()
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
-            with open(video_path, "wb") as f:
-                f.write(r.content)
 
-            uploaded_file = client.files.upload(file=video_path)
+def analyze_video_file(video_path: str) -> str:
+    uploaded_file = client.files.upload(file=video_path)
 
-            while uploaded_file.state.name == "PROCESSING":
-                time.sleep(5)
-                uploaded_file = client.files.get(name=uploaded_file.name)
+    while uploaded_file.state.name == "PROCESSING":
+        time.sleep(5)
+        uploaded_file = client.files.get(name=uploaded_file.name)
 
-            if uploaded_file.state.name != "ACTIVE":
-                return jsonify({
-                    "error": "Gemini video processing failed"
-                }), 500
+    if uploaded_file.state.name != "ACTIVE":
+        raise Exception("Gemini video processing failed")
 
-            prompt = """
+    prompt = """
 この動画を分析して操作手順書を作成してください。
 
 出力形式:
@@ -119,24 +166,15 @@ def manual():
 Markdown形式で出力してください。
 """
 
-            response = client.models.generate_content(
-                model="gemini-2.5-pro",
-                contents=[
-                    uploaded_file,
-                    prompt
-                ]
-            )
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=[
+            uploaded_file,
+            prompt
+        ]
+    )
 
-            return jsonify({
-                "manual": response.text,
-                "source": "video"
-            })
-
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+    return response.text
 
 
 @app.route("/word", methods=["POST"])
