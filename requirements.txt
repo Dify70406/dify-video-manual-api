@@ -4,4 +4,3 @@ requests
 google-genai
 python-docx
 yt-dlp
-gunicorn
