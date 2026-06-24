@@ -515,7 +515,7 @@ def cleanup_subtitle_files():
             os.remove(file)
         except Exception:
             pass
-`
+
 def vtt_to_text(vtt: str) -> str:
     lines = vtt.splitlines()
     texts = []
@@ -546,4 +546,3 @@ def vtt_to_text(vtt: str) -> str:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-``
