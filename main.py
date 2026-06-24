@@ -494,19 +494,21 @@ yt-dlp error:
 
     files = glob.glob("/tmp/youtube_subtitle*.vtt")
 
-if not files:
-    return "字幕ファイルが見つかりませんでした。"
 
-subtitle_text = ""
+def get_subtitle_text(files):
+    if not files:
+        return "字幕ファイルが見つかりませんでした。"
 
-for file in files:
-    with open(file, "r", encoding="utf-8", errors="ignore") as f:
-        subtitle_text += "\n" + vtt_to_text(f.read())
+    subtitle_text = ""
 
-if not subtitle_text.strip():
-    return "字幕が空でした。"
+    for file in files:
+        with open(file, "r", encoding="utf-8", errors="ignore") as f:
+            subtitle_text += "\n" + vtt_to_text(f.read())
 
-return subtitle_text
+    if not subtitle_text.strip():
+        return "字幕が空でした。"
+
+    return subtitle_text
 
 
 def cleanup_subtitle_files():
