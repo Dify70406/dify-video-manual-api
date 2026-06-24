@@ -233,7 +233,7 @@ def word():
             screenshot_paths = extract_screenshots(
                 video_path=video_path,
                 work_id=work_id,
-                max_shots=4
+                max_shots=4,
             )
 
         doc = build_manual_doc(text, screenshot_paths)
@@ -307,16 +307,7 @@ def parse_manual_blocks(lines: list[str]) -> list:
         if not line:
             continue
 
-        if line.startswith("# "):
-            if current:
-                blocks.append(current)
-            current = {
-                "type": "h1",
-                "title": line.replace("# ", "").strip(),
-                "body": []
-            }
-
-        elif line.startswith("## "):
+        if line.startswith("## "):
             if current:
                 blocks.append(current)
             current = {
@@ -324,7 +315,14 @@ def parse_manual_blocks(lines: list[str]) -> list:
                 "title": line.replace("## ", "").strip(),
                 "body": []
             }
-
+        elif line.startswith("# "):
+            if current:
+                blocks.append(current)
+            current = {
+                "type": "h1",
+                "title": line.replace("# ", "").strip(),
+                "body": []
+            }
         else:
             if current is None:
                 current = {
@@ -348,11 +346,9 @@ def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> li
     os.makedirs(out_dir, exist_ok=True)
 
     duration = get_video_duration(video_path)
-
     if duration <= 0:
         return []
 
-    # 先頭・末尾を避けて均等抽出
     timestamps = []
     for i in range(max_shots):
         pos = (i + 1) / (max_shots + 1)
@@ -368,21 +364,21 @@ def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> li
             "ffmpeg",
             "-y",
             "-ss",
-            f"{sec}",
+            str(sec),
             "-i",
             video_path,
             "-frames:v",
             "1",
             "-q:v",
             "2",
-            out_path
+            out_path,
         ]
 
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
 
         if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
@@ -403,14 +399,14 @@ def get_video_duration(video_path: str) -> float:
         "format=duration",
         "-of",
         "default=noprint_wrappers=1:nokey=1",
-        video_path
+        video_path,
     ]
 
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        timeout=30
+        timeout=30,
     )
 
     if result.returncode != 0:
@@ -478,14 +474,14 @@ def get_youtube_subtitle(url: str) -> str:
         "vtt",
         "-o",
         outtmpl,
-        url
+        url,
     ]
 
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        timeout=120
+        timeout=120,
     )
 
     if result.returncode != 0:
@@ -496,23 +492,22 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt")
+    files = glob.glob("/tmp/youtube_subtitle*.*tt*)
 
- *  if*not files*
-        *eturn "*幕ファイルが見つ*りませんでした。"*
-*   subtit*e_text = *"
+    if*not files*
+       *return "*幕ファ*ルが*つか*ませんでした。"
+**   subtit*e_text*= ""
 
-   *for file *n files:
-*      *with open*file, "r*, encodin*="utf-8*, errors=*ignore") *s*f:
-      *     subt*tle_text *=*"\n" + vt**to_text(f*read())
+   *for file*in files:*        w*th*open(file* "r*, encodin*="utf-*", errors*"ignore*) as*f:
+      *     subt*tle*text += "*n"*+ v*t_to*text(f*read())
 
-*  *if not su*title_tex*.strip():**       re*urn "字幕が空*した。"
+*   if*not subti*le_text.s*rip():
+*       re*urn "字幕が*でした。*
 
-   *return su*title*text
+    ret*rn subtit*e_text*
 
-
-de* cleanup_*ubtitle*files():
-*   for fi*e in*glob.glob*"/tmp/you*ube*subtitle*"):
+def cle*nup_sub*itle_file*():
+    f*r*file in g*ob.glob("**mp/youtub*_subtitle*"):
         try:
             os.remove(file)
         except Exception:
@@ -549,3 +544,4 @@ def vtt_to_text(vtt: str) -> str:
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+``
