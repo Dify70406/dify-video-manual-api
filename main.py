@@ -6,7 +6,6 @@ import subprocess
 import re
 import glob
 import base64
-import math
 
 from flask import Flask, request, jsonify, send_file
 from google import genai
@@ -113,6 +112,7 @@ def manual():
             work_id = str(int(time.time()))
             video_path = f"/tmp/{work_id}{ext}"
 
+            # data:video/...;base64,... のような形式にも対応
             if "," in content_b64:
                 content_b64 = content_b64.split(",", 1)[1]
 
@@ -298,7 +298,7 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
     return doc
 
 
-def parse_manual_blocks(lines: list[str]) -> list[dict]:
+def parse_manual_blocks(lines: list[str]) -> list:
     blocks = []
     current = None
 
@@ -432,6 +432,7 @@ def normalize_manual_text(text: str) -> str:
 
     text = text.strip()
 
+    # ```markdown ... ``` や ``` ... ``` を除去
     text = text.replace("```markdown", "").replace("```md", "").replace("```", "").strip()
 
     lines = text.splitlines()
@@ -457,11 +458,11 @@ def normalize_manual_text(text: str) -> str:
     return text
 
 
-def is_youtube_url(url):
+def is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
 
-def get_youtube_subtitle(url):
+def get_youtube_subtitle(url: str) -> str:
     cleanup_subtitle_files()
 
     outtmpl = "/tmp/youtube_subtitle"
@@ -495,31 +496,30 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt*)
+    files = glob.glob("/tmp/youtube_subtitle*.vtt")
 
-    if*not files*
-        *eturn*"字幕ファイル*見つか*ませんでした。*
+ *  if*not files*
+        *eturn "*幕ファイルが見つ*りませんでした。"*
+*   subtit*e_text = *"
 
-    sub*itle_text*= ""
+   *for file *n files:
+*      *with open*file, "r*, encodin*="utf-8*, errors=*ignore") *s*f:
+      *     subt*tle_text *=*"\n" + vt**to_text(f*read())
 
-   *for*file in f*les:
-*       wi*h open(fi*e,*"r",*encoding=*utf-*", errors*"*gnore") a* f*
-        *   subtit*e_text*+= "\n"*+ vtt_to*text(f.re*d())
+*  *if not su*title_tex*.strip():**       re*urn "字幕が空*した。"
 
-*   if not*subtitle_*ext.strip*):
-      * return "*幕が*でした。"
+   *return su*title*text
 
-*   return*subtitle_*ext*
 
-def cle*nup_sub*itle_file*():
-   *for file *n glob*glob("/tm*/youtube*subtitle*"):
+de* cleanup_*ubtitle*files():
+*   for fi*e in*glob.glob*"/tmp/you*ube*subtitle*"):
         try:
             os.remove(file)
         except Exception:
             pass
 
 
-def vtt_to_text(vtt):
+def vtt_to_text(vtt: str) -> str:
     lines = vtt.splitlines()
     texts = []
 
@@ -545,3 +545,7 @@ def vtt_to_text(vtt):
             texts.append(line)
 
     return "\n".join(texts)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
