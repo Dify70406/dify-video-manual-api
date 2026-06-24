@@ -492,7 +492,7 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.*tt*)
+    files = glob.glob("/tmp/youtube_subtitle*.vtt")
 
     if*not files*
        *return "*幕ファ*ルが*つか*ませんでした。"
