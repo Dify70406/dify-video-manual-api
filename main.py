@@ -6,10 +6,13 @@ import subprocess
 import re
 import glob
 import base64
+import math
 
 from flask import Flask, request, jsonify, send_file
 from google import genai
 from docx import Document
+from docx.shared import Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 app = Flask(__name__)
 
@@ -110,7 +113,6 @@ def manual():
             work_id = str(int(time.time()))
             video_path = f"/tmp/{work_id}{ext}"
 
-            # data:video/...;base64,... のような形式にも対応
             if "," in content_b64:
                 content_b64 = content_b64.split(",", 1)[1]
 
@@ -197,7 +199,10 @@ def analyze_video_file(video_path: str) -> str:
 def word():
     try:
         data = request.get_json(silent=True) or {}
+
         text = data.get("text", "")
+        file_name = data.get("file_name")
+        content_b64 = data.get("content")
 
         if not text:
             text = "手順を生成できませんでした"
@@ -206,22 +211,32 @@ def word():
 
         doc_path = f"/tmp/manual_{int(time.time())}.docx"
 
-        doc = Document()
-        doc.add_heading("操作手順書", level=1)
+        screenshot_paths = []
 
-        for line in text.splitlines():
-            line = line.strip()
+        # 動画が渡されていればスクリーンショットを抽出
+        if file_name and content_b64:
+            ext = os.path.splitext(file_name)[1].lower()
+            if not ext:
+                ext = ".mp4"
 
-            if not line:
-                continue
+            work_id = str(int(time.time()))
+            video_path = f"/tmp/word_src_{work_id}{ext}"
 
-            if line.startswith("# "):
-                doc.add_heading(line.replace("# ", "").strip(), level=1)
-            elif line.startswith("## "):
-                doc.add_heading(line.replace("## ", "").strip(), level=2)
-            else:
-                doc.add_paragraph(line)
+            if "," in content_b64:
+                content_b64 = content_b64.split(",", 1)[1]
 
+            video_bytes = base64.b64decode(content_b64)
+
+            with open(video_path, "wb") as f:
+                f.write(video_bytes)
+
+            screenshot_paths = extract_screenshots(
+                video_path=video_path,
+                work_id=work_id,
+                max_shots=4
+            )
+
+        doc = build_manual_doc(text, screenshot_paths)
         doc.save(doc_path)
 
         return send_file(
@@ -238,6 +253,175 @@ def word():
         }), 500
 
 
+def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
+    doc = Document()
+    doc.add_heading("操作手順書", level=1)
+
+    lines = [line.rstrip() for line in text.splitlines()]
+    blocks = parse_manual_blocks(lines)
+
+    shot_index = 0
+
+    for block in blocks:
+        block_type = block["type"]
+        block_title = block["title"]
+        block_body = block["body"]
+
+        if block_type == "h1":
+            doc.add_heading(block_title, level=1)
+
+        elif block_type == "h2":
+            doc.add_heading(block_title, level=2)
+
+            # 手順見出しの直後にスクリーンショットを挿入
+            if shot_index < len(screenshot_paths):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run()
+                run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+                shot_index += 1
+
+        for body_line in block_body:
+            body_line = body_line.strip()
+            if body_line:
+                doc.add_paragraph(body_line)
+
+    # スクショが余ったら最後に参考画像として追加
+    while shot_index < len(screenshot_paths):
+        doc.add_paragraph("参考画像")
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run()
+        run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+        shot_index += 1
+
+    return doc
+
+
+def parse_manual_blocks(lines: list[str]) -> list[dict]:
+    blocks = []
+    current = None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+
+        if line.startswith("# "):
+            if current:
+                blocks.append(current)
+            current = {
+                "type": "h1",
+                "title": line.replace("# ", "").strip(),
+                "body": []
+            }
+
+        elif line.startswith("## "):
+            if current:
+                blocks.append(current)
+            current = {
+                "type": "h2",
+                "title": line.replace("## ", "").strip(),
+                "body": []
+            }
+
+        else:
+            if current is None:
+                current = {
+                    "type": "text",
+                    "title": "",
+                    "body": []
+                }
+            current["body"].append(line)
+
+    if current:
+        blocks.append(current)
+
+    return blocks
+
+
+def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> list[str]:
+    """
+    動画の長さに応じて均等な位置からスクリーンショットを抽出する。
+    """
+    out_dir = f"/tmp/screens_{work_id}"
+    os.makedirs(out_dir, exist_ok=True)
+
+    duration = get_video_duration(video_path)
+
+    if duration <= 0:
+        return []
+
+    # 先頭・末尾を避けて均等抽出
+    timestamps = []
+    for i in range(max_shots):
+        pos = (i + 1) / (max_shots + 1)
+        sec = max(0.5, duration * pos)
+        timestamps.append(sec)
+
+    screenshot_paths = []
+
+    for idx, sec in enumerate(timestamps, start=1):
+        out_path = os.path.join(out_dir, f"shot_{idx:02d}.jpg")
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{sec}",
+            "-i",
+            video_path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            out_path
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            screenshot_paths.append(out_path)
+
+    return screenshot_paths
+
+
+def get_video_duration(video_path: str) -> float:
+    """
+    ffprobe で動画秒数を取得
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path
+    ]
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=30
+    )
+
+    if result.returncode != 0:
+        return 0.0
+
+    try:
+        return float(result.stdout.strip())
+    except Exception:
+        return 0.0
+
+
 def normalize_manual_text(text: str) -> str:
     """
     AIが前置き文を返した場合に、
@@ -248,7 +432,6 @@ def normalize_manual_text(text: str) -> str:
 
     text = text.strip()
 
-    # ```markdown ... ``` や ``` ... ``` を除去
     text = text.replace("```markdown", "").replace("```md", "").replace("```", "").strip()
 
     lines = text.splitlines()
@@ -312,25 +495,24 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt")
+    files = glob.glob("/tmp/youtube_subtitle*.vtt*)
 
-    if not files:
-        return "字幕ファイルが見つかりませんでした。"
+    if*not files*
+        *eturn*"字幕ファイル*見つか*ませんでした。*
 
-    subtitle_text = ""
+    sub*itle_text*= ""
 
-    for file in files:
-        with open(file, "r", encoding="utf-8", errors="ignore") as f:
-            subtitle_text += "\n" + vtt_to_text(f.read())
+   *for*file in f*les:
+*       wi*h open(fi*e,*"r",*encoding=*utf-*", errors*"*gnore") a* f*
+        *   subtit*e_text*+= "\n"*+ vtt_to*text(f.re*d())
 
-    if not subtitle_text.strip():
-        return "字幕が空でした。"
+*   if not*subtitle_*ext.strip*):
+      * return "*幕が*でした。"
 
-    return subtitle_text
+*   return*subtitle_*ext*
 
-
-def cleanup_subtitle_files():
-    for file in glob.glob("/tmp/youtube_subtitle*"):
+def cle*nup_sub*itle_file*():
+   *for file *n glob*glob("/tm*/youtube*subtitle*"):
         try:
             os.remove(file)
         except Exception:
