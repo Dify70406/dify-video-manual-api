@@ -313,7 +313,7 @@ def word():
         doc_path = f"/tmp/manual_{int(time.time())}.docx"
         screenshot_paths = []
 
-# 動画が渡されていればスクリーンショットを抽出
+        # 動画が渡されていればスクリーンショットを抽出
         if file_name and content_b64:
             ext = os.path.splitext(file_name)[1].lower()
             if not ext:
@@ -343,7 +343,7 @@ def word():
                 print("[word] screenshot extraction failed")
                 print(traceback.format_exc())
                 screenshot_paths = []
-        
+
         print(f"[word] screenshot_count={len(screenshot_paths)}")
         print(f"[word] screenshot_paths={screenshot_paths}")
 
@@ -365,7 +365,7 @@ def word():
             "error": str(e),
             "traceback": traceback.format_exc()
         }), 500
-
+        
 
 def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
     print("[build_manual_doc] start")
