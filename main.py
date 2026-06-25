@@ -124,6 +124,7 @@ def manual():
         # ② Power Automate から Base64 動画が来た場合
         elif file_name and content_b64:
             print("[manual] path=sharepoint_file")
+
             ext = os.path.splitext(file_name)[1].lower()
             if not ext:
                 ext = ".mp4"
@@ -216,6 +217,8 @@ def analyze_video_file(video_path: str) -> str:
 - 前置きや会話文は禁止です
 - 動画に具体的な操作手順が含まれていない場合は、その旨を簡潔に記載してください
 """
+
+    print("[analyze_video_file] generate_content start")
 
     response = client.models.generate_content(
         model="gemini-2.5-pro",
@@ -320,3 +323,305 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
         )
 
     shot_index = 0
+
+    for block in blocks:
+        block_type = block["type"]
+        block_title = block["title"]
+        block_body = block["body"]
+
+        if block_type == "h1":
+            doc.add_heading(block_title, level=1)
+
+        elif block_type == "h2":
+            doc.add_heading(block_title, level=2)
+
+            # 手順見出しの直後にスクリーンショットを挿入
+            if shot_index < len(screenshot_paths):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run()
+                run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+                shot_index += 1
+
+        for body_line in block_body:
+            body_line = body_line.strip()
+            if body_line:
+                doc.add_paragraph(body_line)
+
+    # スクショが余ったら最後に参考画像として追加
+    while shot_index < len(screenshot_paths):
+        doc.add_paragraph("参考画像")
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run()
+        run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+        shot_index += 1
+
+    return doc
+
+
+def parse_manual_blocks(lines: list[str]) -> list:
+    blocks = []
+    current = None
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+
+        if line.startswith("## "):
+            if current:
+                blocks.append(current)
+            current = {
+                "type": "h2",
+                "title": line.replace("## ", "").strip(),
+                "body": []
+            }
+        elif line.startswith("# "):
+            if current:
+                blocks.append(current)
+            current = {
+                "type": "h1",
+                "title": line.replace("# ", "").strip(),
+                "body": []
+            }
+        else:
+            if current is None:
+                current = {
+                    "type": "text",
+                    "title": "",
+                    "body": []
+                }
+            current["body"].append(line)
+
+    if current:
+        blocks.append(current)
+
+    return blocks
+
+
+def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> list"""
+    動画の長さに応じて均等な位置からスクリーンショットを抽出する。
+    """
+    out_dir = f"/tmp/screens_{work_id}"
+    os.makedirs(out_dir, exist_ok=True)
+
+    duration = get_video_duration(video_path)
+    if duration <= 0:
+        print("[extract_screenshots] duration <= 0")
+        return []
+
+    print(f"[extract_screenshots] duration={duration}")
+
+    timestamps = []
+    for i in range(max_shots):
+        pos = (i + 1) / (max_shots + 1)
+        sec = max(0.5, duration * pos)
+        timestamps.append(sec)
+
+    print(f"[extract_screenshots] timestamps={timestamps}")
+
+    screenshot_paths = []
+
+    for idx, sec in enumerate(timestamps, start=1):
+        out_path = os.path.join(out_dir, f"shot_{idx:02d}.jpg")
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(sec),
+            "-i",
+            video_path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            out_path,
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        print(f"[extract_screenshots] ffmpeg idx={idx}, returncode={result.returncode}")
+
+        if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            screenshot_paths.append(out_path)
+            print(f"[extract_screenshots] saved={out_path}, size={os.path.getsize(out_path)}")
+        else:
+            print(f"[extract_screenshots] failed idx={idx}, stderr={result.stderr}")
+
+    return screenshot_paths
+
+
+def get_video_duration(video_path: str) -> float:
+    """
+    ffprobe で動画秒数を取得
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    print(f"[get_video_duration] returncode={result.returncode}")
+    print(f"[get_video_duration] stdout={result.stdout}")
+    print(f"[get_video_duration] stderr={result.stderr}")
+
+    if result.returncode != 0:
+        return 0.0
+
+    try:
+        return float(result.stdout.strip())
+    except Exception:
+        return 0.0
+
+
+def normalize_manual_text(text: str) -> str:
+    """
+    AIが前置き文を返した場合に、
+    最初の # 概要 / # 操作手順 / # 注意事項 / ## 手順1 から始まるように整形する。
+    """
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # ```markdown ... ``` や ``` ... ``` を除去
+    text = text.replace("```markdown", "").replace("```md", "").replace("```", "").strip()
+
+    lines = text.splitlines()
+
+    start_index = None
+    heading_patterns = (
+        "# 概要",
+        "#操作手順",
+        "# 操作手順",
+        "# 注意事項",
+        "## 手順1",
+    )
+
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if any(line.startswith(pattern) for pattern in heading_patterns):
+            start_index = i
+            break
+
+    if start_index is not None:
+        text = "\n".join(lines[start_index:]).strip()
+
+    return text
+
+
+def is_youtube_url(url: str) -> bool:
+    return "youtube.com" in url or "youtu.be" in url
+
+
+def get_youtube_subtitle(url: str) -> str:
+    cleanup_subtitle_files()
+
+    outtmpl = "/tmp/youtube_subtitle"
+
+    cmd = [
+        "yt-dlp",
+        "--skip-download",
+        "--write-subs",
+        "--write-auto-subs",
+        "--sub-langs",
+        "ja,en",
+        "--sub-format",
+        "vtt",
+        "-o",
+        outtmpl,
+        url,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    if result.returncode != 0:
+        return f"""
+字幕取得に失敗しました。
+
+yt-dlp error:
+{result.stderr}
+"""
+
+    files = glob.glob("/tmp/youtube_subtitle*.vtt")
+    return get_subtitle_text(files)
+
+
+def get_subtitle_text(files):
+    if not files:
+        return "字幕ファイルが見つかりませんでした。"
+
+    subtitle_text = ""
+
+    for file in files:
+        with open(file, "r", encoding="utf-8", errors="ignore") as f:
+            subtitle_text += "\n" + vtt_to_text(f.read())
+
+    if not subtitle_text.strip():
+        return "字幕が空でした。"
+
+    return subtitle_text
+
+
+def cleanup_subtitle_files():
+    for file in glob.glob("/tmp/youtube_subtitle*"):
+        try:
+            os.remove(file)
+        except Exception:
+            pass
+
+
+def vtt_to_text(vtt: str) -> str:
+    lines = vtt.splitlines()
+    texts = []
+
+    for line in lines:
+        line = line.strip()
+
+        if not line:
+            continue
+
+        if line == "WEBVTT":
+            continue
+
+        if "-->" in line:
+            continue
+
+        if re.match(r"^\d+$", line):
+            continue
+
+        line = re.sub(r"<[^>]+>", "", line)
+        line = line.strip()
+
+        if line:
+            texts.append(line)
+
+    return "\n".join(texts)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
