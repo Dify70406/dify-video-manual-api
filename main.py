@@ -622,7 +622,7 @@ yt-dlp error:
 """
 
     files = glob.glob("/tmp/youtube_subtitle*.vtt")
-    return get_subtile_text(files)
+    return get_subtilte_text(files)
 
 def get_subtitle_text(files: list[str]) -> str:
     if not files:
