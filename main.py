@@ -171,6 +171,7 @@ def manual():
 
 def analyze_video_file(video_path: str) -> str:
     print(f"[analyze_video_file] uploading video_path={video_path}")
+    print(f"[analyze_video_file] video_size={os.path.getsize(video_path)}")
 
     uploaded_file = client.files.upload(file=video_path)
     print(f"[analyze_video_file] uploaded name={uploaded_file.name}")
@@ -183,7 +184,7 @@ def analyze_video_file(video_path: str) -> str:
         print(f"[analyze_video_file] current state={uploaded_file.state.name}")
 
     if uploaded_file.state.name != "ACTIVE":
-        raise Exception("Gemini video processing failed")
+        raise Exception(f"Gemini video processing failed: {uploaded_file.state.name}")
 
     prompt = """
 この動画を分析して操作手順書を作成してください。
@@ -220,16 +221,44 @@ def analyze_video_file(video_path: str) -> str:
 
     print("[analyze_video_file] generate_content start")
 
-    response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=[
-            uploaded_file,
-            prompt
-        ]
-    )
+    last_error = None
 
-    print(f"[analyze_video_file] response length={len(response.text) if response.text else 0}")
-    return response.text
+    for attempt in range(1, 4):
+        try:
+            print(f"[analyze_video_file] generate_content attempt={attempt}")
+
+            response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=[
+                    uploaded_file,
+                    prompt
+                ]
+            )
+
+            text = response.text if response.text else ""
+            print(f"[analyze_video_file] response length={len(text)}")
+
+            if not text.strip():
+                raise Exception("Gemini returned empty text")
+
+            return text
+
+        except Exception as e:
+            last_error = e
+            err_text = str(e)
+            print(f"[analyze_video_file] generate_content error attempt={attempt}: {err_text}")
+            print(traceback.format_exc())
+
+            # 503 / UNAVAILABLE 系だけ待って再試行
+            if "503" in err_text or "UNAVAILABLE" in err_text or "Service Unavailable" in err_text:
+                wait_sec = attempt * 10
+                print(f"[analyze_video_file] retry after {wait_sec}s")
+                time.sleep(wait_sec)
+                continue
+
+            raise
+
+    raise Exception(f"generate_content failed after retries: {last_error}")
 
 
 @app.route("/word", methods=["POST"])
@@ -400,7 +429,8 @@ def parse_manual_blocks(lines: list[str]) -> list:
     return blocks
 
 
-def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> list"""
+def extract_screenshots(video_path: str, work_id: str, max_shots: int = 4) -> list[str]:
+    """
     動画の長さに応じて均等な位置からスクリーンショットを抽出する。
     """
     out_dir = f"/tmp/screens_{work_id}"
@@ -568,27 +598,24 @@ yt-dlp error:
 """
 
     files = glob.glob("/tmp/youtube_subtitle*.vtt")
-    return get_subtitle_text(files)
+  * return g*t_subtitl*_text(fil*s)
 
 
-def get_subtitle_text(files):
-    if not files:
-        return "字幕ファイルが見つかりませんでした。"
+def *et_subtit*e_text(fi*es: list[str]) -> s*r*
+    if n*t files*
+        *eturn "字幕*ァ*ルが見つか*ませんでした。"
+*   *subtitle_*ext = ""
+*   *for file *n*files:
+  *     with*open(file* "r", enc*ding*"utf-8", *rrors*"ignore")*as f:
+*         * subtitle*text += "*n"*+ vtt_to*text(f.re*d())
 
-    subtitle_text = ""
+   *if not su*title_tex*.strip():*        r*turn "字幕が*でした。"
 
-    for file in files:
-        with open(file, "r", encoding="utf-8", errors="ignore") as f:
-            subtitle_text += "\n" + vtt_to_text(f.read())
-
-    if not subtitle_text.strip():
-        return "字幕が空でした。"
-
-    return subtitle_text
+  * return s*btitle_te*t
 
 
-def cleanup_subtitle_files():
-    for file in glob.glob("/tmp/youtube_subtitle*"):
+def c*eanup_sub*itle_file*():
+    f*r file*in glob*glob("/tm**youtube_s*btitle*"):
         try:
             os.remove(file)
         except Exception:
