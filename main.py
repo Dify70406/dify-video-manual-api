@@ -329,11 +329,16 @@ def word():
             print(f"[word] saved video_path={video_path}")
             print(f"[word] video_size={os.path.getsize(video_path)}")
 
+        try:
             screenshot_paths = extract_screenshots(
                 video_path=video_path,
                 work_id=work_id,
                 max_shots=4,
             )
+            except Exception:
+                print("[word] screenshot extraction failed")
+                print(traceback.format_exc())
+                screenshot_paths = []
 
         print(f"[word] screenshot_count={len(screenshot_paths)}")
         print(f"[word] screenshot_paths={screenshot_paths}")
