@@ -6,6 +6,10 @@ import subprocess
 import re
 import glob
 import base64
+import shutil
+
+print("ffmpeg =", shutil.which("ffmpeg"))
+print("ffprobe =", shutil.which("ffprobe"))
 
 from flask import Flask, request, jsonify, send_file
 from google import genai
