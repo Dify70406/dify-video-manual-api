@@ -263,7 +263,9 @@ def analyze_video_file(video_path: str) -> str:
                 ]
             )
 
-            text = response.text if response.text else ""
+            print(f"[analyze_video_file] response object={response}")
+
+            text = response.text if getattr(response, "text", None) else ""
             print(f"[analyze_video_file] response length={len(text)}")
 
             if not text.strip():
@@ -273,11 +275,14 @@ def analyze_video_file(video_path: str) -> str:
 
         except Exception as e:
             last_error = e
-            err_text = str(e)
-            print(f"[analyze_video_file] generate_content error attempt={attempt}: {err_text}")
+            print(f"[analyze_video_file] generate_content error attempt={attempt}")
+            print(f"[analyze_video_file] error type={type(e).__name__}")
+            print(f"[analyze_video_file] error str={str(e)}")
+            print(f"[analyze_video_file] error repr={repr(e)}")
             print(traceback.format_exc())
 
-            # 503 / UNAVAILABLE 系だけ待って再試行
+            err_text = str(e)
+
             if "503" in err_text or "UNAVAILABLE" in err_text or "Service Unavailable" in err_text:
                 wait_sec = attempt * 10
                 print(f"[analyze_video_file] retry after {wait_sec}s")
