@@ -407,7 +407,7 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
                 p = doc.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run = p.add_run()
-                run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+                run.add_picture(screenshot_paths[shot_index], width=Inches(2.0))
                 shot_index += 1
 
         for body_line in block_body:
@@ -421,7 +421,7 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run()
-        run.add_picture(screenshot_paths[shot_index], width=Inches(5.5))
+        run.add_picture(screenshot_paths[shot_index], width=Inches(2.0))
         shot_index += 1
 
     return doc
