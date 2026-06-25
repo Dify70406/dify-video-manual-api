@@ -173,9 +173,33 @@ def analyze_video_file(video_path: str) -> str:
     print(f"[analyze_video_file] uploading video_path={video_path}")
     print(f"[analyze_video_file] video_size={os.path.getsize(video_path)}")
 
-    uploaded_file = client.files.upload(file=video_path)
-    print(f"[analyze_video_file] uploaded name={uploaded_file.name}")
-    print(f"[analyze_video_file] initial state={uploaded_file.state.name}")
+    # files.upload の簡易リトライ
+    uploaded_file = None
+    last_error = None
+
+    for attempt in range(1, 4):
+        try:
+            print(f"[analyze_video_file] files.upload attempt={attempt}")
+            uploaded_file = client.files.upload(file=video_path)
+            print(f"[analyze_video_file] uploaded name={uploaded_file.name}")
+            print(f"[analyze_video_file] initial state={uploaded_file.state.name}")
+            break
+        except Exception as e:
+            last_error = e
+            err_text = str(e)
+            print(f"[analyze_video_file] files.upload error attempt={attempt}: {err_text}")
+            print(traceback.format_exc())
+
+            if "503" in err_text or "UNAVAILABLE" in err_text or "Service Unavailable" in err_text:
+                wait_sec = attempt * 10
+                print(f"[analyze_video_file] files.upload retry after {wait_sec}s")
+                time.sleep(wait_sec)
+                continue
+
+            raise
+
+    if uploaded_file is None:
+        raise Exception(f"files.upload failed after retries: {last_error}")
 
     while uploaded_file.state.name == "PROCESSING":
         print("[analyze_video_file] file still processing...")
@@ -597,25 +621,28 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt")
-  * return g*t_subtitl*_text(fil*s)
+    files = glob.glob("/tmp/youtube_subtitle*.vtt*)
+*   return*get_subti*le*text(file*)
 
 
-def *et_subtit*e_text(fi*es: list[str]) -> s*r*
+def g*t*subtitle_*ext(files**list[str]* -> str*
     if n*t files*
-        *eturn "字幕*ァ*ルが見つか*ませんでした。"
-*   *subtitle_*ext = ""
-*   *for file *n*files:
-  *     with*open(file* "r", enc*ding*"utf-8", *rrors*"ignore")*as f:
-*         * subtitle*text += "*n"*+ vtt_to*text(f.re*d())
+        *eturn "字幕*ァイルが見つ*りませんでした。*
 
-   *if not su*title_tex*.strip():*        r*turn "字幕が*でした。"
+    sub*itle_text*=*""
 
-  * return s*btitle_te*t
+    f*r*file in f*les:
+    *   with o*en(file, *r",*encoding=*utf-8*, errors=*ignore")*as f:
+   *       *subtitle_*ext += "\*"*+ v*t_to*text(f.re*d())
+
+   *if not su*title_tex*.strip*):
+      * return "*幕*空でした。"
+
+*   return*subtitle_*ext
 
 
-def c*eanup_sub*itle_file*():
-    f*r file*in glob*glob("/tm**youtube_s*btitle*"):
+*ef cleanu*_subtitle*files*):
+    fo* file in*glob.glob*"/tmp/y*utube_subtitle*"):
         try:
             os.remove(file)
         except Exception:
