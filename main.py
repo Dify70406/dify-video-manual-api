@@ -621,7 +621,7 @@ yt-dlp error:
 {result.stderr}
 """
 
-    files = glob.glob("/tmp/youtube_subtitle*.vtt*)
+    files = glob.glob("/tmp/youtube_subtitle*.vtt")
 *   return*get_subti*le*text(file*)
 
 
