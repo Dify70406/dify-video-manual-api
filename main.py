@@ -177,7 +177,6 @@ def analyze_video_file(video_path: str) -> str:
     print(f"[analyze_video_file] uploading video_path={video_path}")
     print(f"[analyze_video_file] video_size={os.path.getsize(video_path)}")
 
-    # files.upload の簡易リトライ
     uploaded_file = None
     last_error = None
 
@@ -187,11 +186,15 @@ def analyze_video_file(video_path: str) -> str:
             uploaded_file = client.files.upload(file=video_path)
             print(f"[analyze_video_file] uploaded name={uploaded_file.name}")
             print(f"[analyze_video_file] initial state={uploaded_file.state.name}")
+            print(f"[analyze_video_file] uploaded mime_type={getattr(uploaded_file, 'mime_type', None)}")
+            print(f"[analyze_video_file] uploaded uri={getattr(uploaded_file, 'uri', None)}")
             break
         except Exception as e:
             last_error = e
             err_text = str(e)
             print(f"[analyze_video_file] files.upload error attempt={attempt}: {err_text}")
+            print(f"[analyze_video_file] files.upload error type={type(e).__name__}")
+            print(f"[analyze_video_file] files.upload error repr={repr(e)}")
             print(traceback.format_exc())
 
             if "503" in err_text or "UNAVAILABLE" in err_text or "Service Unavailable" in err_text:
@@ -257,10 +260,7 @@ def analyze_video_file(video_path: str) -> str:
 
             response = client.models.generate_content(
                 model="gemini-2.5-pro",
-                contents=[
-                    uploaded_file,
-                    prompt
-                ]
+                contents=[prompt, uploaded_file]
             )
 
             print(f"[analyze_video_file] response object={response}")
