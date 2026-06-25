@@ -335,7 +335,7 @@ def word():
                 work_id=work_id,
                 max_shots=4,
             )
-            except Exception:
+        except Exception:
                 print("[word] screenshot extraction failed")
                 print(traceback.format_exc())
                 screenshot_paths = []
