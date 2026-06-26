@@ -405,7 +405,7 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
             # 手順見出しの直後にスクリーンショットを挿入
             if shot_index < len(screenshot_paths):
                 p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 run = p.add_run()
                 run.add_picture(screenshot_paths[shot_index], width=Inches(2.0))
                 shot_index += 1
@@ -419,7 +419,7 @@ def build_manual_doc(text: str, screenshot_paths: list[str]) -> Document:
     while shot_index < len(screenshot_paths):
         doc.add_paragraph("参考画像")
         p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         run = p.add_run()
         run.add_picture(screenshot_paths[shot_index], width=Inches(2.0))
         shot_index += 1
